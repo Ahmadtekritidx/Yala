@@ -31,8 +31,11 @@ globalThis.fetch = async (url, init = {}) => {
     if (process.env.MOCK_GOOGLE_FAIL) return new Response('{"error":{"code":403,"message":"API key not valid"}}', { status: 403 });
     return new Response(JSON.stringify({ places: places(b.textQuery) }), { status: 200 });
   }
-  if (u.includes("ai.gateway.lovable.dev")) {
+  if (u.includes("ai.gateway.lovable.dev") || u.includes("api.openai.com")) {
+    if (u.includes("api.openai.com") && !init.headers?.Authorization?.includes("sk-test")) return new Response('{"error":{"message":"bad key"}}', { status: 401 });
     const b = JSON.parse(init.body); const prompt = b.messages.at(-1).content;
+    (globalThis.__models ??= []).push(u.includes("openai.com") ? b.model : "lovable:" + b.model);
+    if (prompt.startsWith("Return {")) return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200 });
     globalThis.__log.push(["ai", prompt.length]);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(plan(prompt)) } }] }), { status: 200 });
   }

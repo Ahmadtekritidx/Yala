@@ -32,7 +32,9 @@ function StatusPage() {
       {err && <p className="mt-6 text-destructive">{err}</p>}
       {s && (
         <ul className="mt-6 space-y-3">
-          <Row label="AI key (LOVABLE_API_KEY)" ok={s.aiKey} />
+          <Row label={`AI planner (${s.ai.provider === "openai" ? "OpenAI direct" : s.ai.provider === "lovable" ? "Lovable gateway, add OPENAI_API_KEY to switch" : "not set"})`}
+            ok={s.ai.ok && s.ai.provider === "openai"} detail={s.ai.ok ? `Model ${s.ai.model} answered` : s.ai.error} />
+          <Row label="Lovable key (Google connector)" ok={s.aiKey} />
           <Row label="Google key (GOOGLE_MAPS_API_KEY)" ok={s.googleKey} />
           <Row label="Firecrawl key (Instagram links)" ok={s.firecrawlKey} detail={s.firecrawlKey ? "" : "Optional. Without it, Insta buttons open a search."} />
           <Row label="Live Google Places search" ok={s.ok}

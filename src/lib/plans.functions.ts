@@ -8,6 +8,7 @@ import { z } from "zod";
 import { PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
 import { livePlaces, findInstas, placesStatus } from "./live.server";
 import { openAt, closedToday } from "./hours";
+import { aiConfig, aiStatus, chatJSON } from "./ai.server";
 
 const Input = z.object({
   q: z.string().max(300).default(""),
@@ -39,8 +40,7 @@ export type Plan = { title: string; vibe: string; stops: Stop[] };
 export const generatePlans = createServerFn({ method: "POST" })
   .inputValidator((d) => Input.parse(d))
   .handler(async ({ data }) => {
-    const key = process.env["LOVABLE_API_KEY"];
-    if (!key) throw new Error("AI not configured");
+    if (!aiConfig()) return { error: "The planner isn't switched on yet (missing AI key)." };
     const ip = (getRequestHeader("cf-connecting-ip") || getRequestHeader("x-forwarded-for")?.split(",")[0] || "anon").trim();
     const now = Date.now();
     const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW);
@@ -112,25 +112,15 @@ RULES (be the smartest local friend):
 Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hike or road trip, one sea) fitting the time window. Road trips may chain nearby areas (e.g. breakfast in Douma then Tannourine hike then lunch). Morning starts suit Breakfast/Hike. Suit the group size (solo = cafes/walks, big group = big tables, grills). Each plan has stops in a sensible order (meal times make sense, sunset spots late afternoon, keep drives short unless it is a road trip). Titles short and playful (e.g. "Batroun slow Sunday"). Vibe is one line like "Pasta, cortado, then sunset". Each stop reason is max 7 words. If "Something new" was asked, prefer new:true places.`;
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "openai/gpt-6-astra",
-          messages: [
-            { role: "system", content: 'You plan fun Lebanese weekend outings. Light, slightly Lebanese tone in English. Reply ONLY with JSON: {"plans":[{"title":string,"vibe":string,"stops":[{"placeId":string,"reason":string,"time":"HH:MM"}]}]}' },
-            { role: "user", content: prompt },
-          ],
-          response_format: { type: "json_object" },
-          reasoning_effort: "medium",
-        }),
-      });
-      if (res.status === 429) return { error: "Too many plans at once. Breathe, try again in a minute." };
-      if (res.status === 402) return { error: "Out of AI credits for now." };
-      if (!res.ok) { console.error(res.status, await res.text()); continue; }
+      const res = await chatJSON(
+        'You plan fun Lebanese weekend outings. Light, slightly Lebanese tone in English. Reply ONLY with JSON: {"plans":[{"title":string,"vibe":string,"stops":[{"placeId":string,"reason":string,"time":"HH:MM"}]}]}',
+        prompt,
+      );
+      if (!res.ok && (res.status === 402 || /insufficient_quota|billing/i.test(res.error))) return { error: "Out of AI credits for now." };
+      if (!res.ok && res.status === 429) return { error: "Too many plans at once. Breathe, try again in a minute." };
+      if (!res.ok) { console.error("ai", res.status, res.error); continue; }
       try {
-        const json = await res.json();
-        const args = json.choices[0].message.content;
+        const args = res.content;
         const parsed = AiOut.parse(JSON.parse(args));
         const taken = new Set<string>();
         const plans: Plan[] = parsed.plans.map((p) => {
@@ -174,4 +164,4 @@ Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hi
     return { error: "Our friend who knows every spot is not answering. Try again?" };
   });
 
-export const checkStatus = createServerFn({ method: "GET" }).handler(async () => placesStatus());
+export const checkStatus = createServerFn({ method: "GET" }).handler(async () => ({ ...(await placesStatus()), ai: await aiStatus() }));
