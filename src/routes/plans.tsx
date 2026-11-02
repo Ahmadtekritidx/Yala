@@ -4,7 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { generatePlans, type Plan, type Stop } from "@/lib/plans.functions";
-import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category } from "@/lib/places";
+import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category, type Place } from "@/lib/places";
+import { openAt } from "@/lib/hours";
 
 const Search = z.object({
   q: z.coerce.string().optional().default(""),
@@ -18,7 +19,23 @@ const Search = z.object({
   prefs: z.string().optional().default(""),
   stay: z.string().optional().default("No"),
   pace: z.enum(["Chill", "Packed"]).optional().default("Chill"),
+  budget: z.coerce.string().optional().default("0"),
+  drive: z.coerce.string().optional().default("30"),
 });
+
+// Keep the last result per request in this tab, so "Edit plan" and back navigation
+// show the same (edited) plans instead of generating new ones.
+const cacheKey = (s: object) => "yalla:plans:" + JSON.stringify(s);
+function readCache(key: string): { plans: Plan[]; places: Place[] } | null {
+  try { return JSON.parse(sessionStorage.getItem(key) || "null"); } catch { return null; }
+}
+function writeCache(key: string, plans: Plan[]) {
+  try {
+    const ids = new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)));
+    const places = allPlaces().filter((p) => p.live && ids.has(p.id));
+    sessionStorage.setItem(key, JSON.stringify({ plans, places }));
+  } catch {}
+}
 
 export const Route = createFileRoute("/plans")({
   validateSearch: Search,
@@ -48,19 +65,25 @@ function PlansPage() {
   const [swap, setSwap] = useState<{ p: number; i: number } | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
   const [undo, setUndo] = useState<{ prev: Plan[] } | null>(null);
+  const [noAdd, setNoAdd] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const label = [s.q, s.what.replaceAll(",", ", "), s.where.replaceAll(",", ", ")].filter(Boolean).join(" · ") || "Surprise me";
+  const key = cacheKey(s);
+
+  useEffect(() => { if (plans) writeCache(key, plans); }, [plans, key]);
 
   useEffect(() => {
     setPlans(null); setError("");
+    const hit = n === 0 ? readCache(key) : null;
+    if (hit) { registerPlaces(hit.places); setPlans(hit.plans); return; }
     const iv = setInterval(() => setMsg((m) => (m + 1) % LOADING.length), 1400);
-    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay } })
+    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30 } })
       .then((r) => { if ("error" in r && r.error) return setError(r.error); if (r.places) registerPlaces(r.places); setPlans(r.plans!); })
       .catch(() => setError("Something broke on our side. Try again?"))
       .finally(() => clearInterval(iv));
     return () => clearInterval(iv);
-  }, [s.q, s.what, s.where, s.day, s.time, s.end, s.people, s.pace, s.avoid, s.prefs, s.stay, n]);
+  }, [key, n]);
 
   const retime = (stops: Stop[], start: number): Stop[] => {
     let t = start;
@@ -74,10 +97,9 @@ function PlansPage() {
 
   const remove = (p: number, i: number) => {
     const plan = plans![p]!;
-    const removed = byId(plan.stops[i]!.placeId)!;
-    const stops = plan.stops.filter((_, k) => k !== i).map((st, k) => (k >= i ? { ...st, time: st.time - removed.mins } : st));
+    const stops = plan.stops.filter((_, k) => k !== i);
     setUndo({ prev: plans! });
-    update(p, stops);
+    update(p, retime(stops, plan.stops[0]!.time));
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setUndo(null), 5000);
   };
@@ -86,10 +108,11 @@ function PlansPage() {
     const plan = plans![p]!;
     const last = byId(plan.stops.at(-1)!.placeId)!;
     const used = new Set(plans!.flatMap((x) => x.stops.map((st) => st.placeId)));
-    const pick = allPlaces().filter((x) => x.cat === cat && !used.has(x.id))
-      .sort((a, b) => (a.area === last.area ? -1 : 1) - (b.area === last.area ? -1 : 1))[0];
-    if (!pick) return setAdding(null);
-    update(p, [...plan.stops, { placeId: pick.id, reason: pick.reason, time: plan.stops.at(-1)!.time + 90 }]);
+    const pick = allPlaces().filter((x) => x.cat === cat && !used.has(x.id) && driveMins(last, x) <= 45)
+      .sort((a, b) => driveMins(last, a) - driveMins(last, b) || b.rating - a.rating)[0];
+    if (!pick) { setNoAdd(cat); setAdding(null); return; }
+    setNoAdd("");
+    update(p, retime([...plan.stops, { placeId: pick.id, reason: pick.reason, time: 0 }], plan.stops[0]!.time));
     setAdding(null);
   };
 
@@ -151,6 +174,11 @@ function PlansPage() {
                             <p className="font-bold">{pl.name}</p>
                             <p className="text-sm text-muted-foreground">{st.reason}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">{"$".repeat(pl.price)} · ★ {pl.rating}{pl.reviews ? ` (${pl.reviews})` : ""} · {pl.area}{pl.live ? " · live on Google" : ""}</p>
+                            {pl.hours && (
+                              <p className={`mt-0.5 text-xs ${openAt(pl.hours, st.time, pl.mins) ? "text-muted-foreground" : "font-bold text-destructive"}`}>
+                                {openAt(pl.hours, st.time, pl.mins) ? `Open ${s.day}: ${pl.hours}` : `Closed at this time (${pl.hours}). Swap it?`}
+                              </p>
+                            )}
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <button aria-label="Swap" onClick={() => setSwap({ p, i })} className="grid h-11 w-11 place-items-center rounded-full border border-border hover:border-primary">⇄</button>
@@ -170,6 +198,7 @@ function PlansPage() {
                 ) : (
                   <button onClick={() => setAdding(p)} className="mt-4 min-h-11 text-sm font-bold text-primary">+ add a stop</button>
                 )}
+                {noAdd && adding === null && <p className="text-xs text-muted-foreground">No {noAdd.toLowerCase()} spot within 45 min of the last stop.</p>}
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
                   <p className="text-sm text-muted-foreground">{Math.round(total / 30) / 2}h{lastPlace?.cat === "Stay" ? " + overnight" : ""} · ~${cost}/person{Number(s.people) > 1 ? ` · ~$${cost * Number(s.people)} for ${s.people}` : ""}</p>
                   <button className="min-h-11 rounded-xl pop press bg-primary px-5 font-bold text-primary-foreground" onClick={() => { const code = encodePlan({ ...plan, day: s.day }); saveRecent(code, plan.title); navigate({ to: "/p/$code", params: { code } }); }}>Pick this plan</button>

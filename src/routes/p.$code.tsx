@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
-import { byId, fmt, driveMins } from "@/lib/places";
+import { byId, fmt, driveMins, registerPlaces } from "@/lib/places";
 
 export const Route = createFileRoute("/p/$code")({
   loader: ({ params }) => ({ plan: decodePlan(params.code) }),
@@ -52,6 +52,8 @@ function gcal(title: string, vibe: string, day: string, stops: { placeId: string
 
 function SharedPlan() {
   const { plan } = Route.useLoaderData();
+  // The loader may have run on the server: register the plan's live Google places in this browser too
+  if (plan?.places.length) registerPlaces(plan.places);
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [here, setHere] = useState("");
