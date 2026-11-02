@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
+import { VibeStrip } from "@/components/VibeStrip";
 import { byId, fmt, driveMins } from "@/lib/places";
 
 export const Route = createFileRoute("/p/$code")({
@@ -112,6 +113,7 @@ function SharedPlan() {
                 {pl.web && !pl.web.includes("instagram.com") && <a href={pl.web} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Site</a>}
                 <a href={pl.maps ?? mapsPlace(pl.name, pl.area)} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Reviews</a>
               </div>
+              <VibeStrip place={pl} />
             </li>
           );
         })}

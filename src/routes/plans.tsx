@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { generatePlans, type Plan, type Stop } from "@/lib/plans.functions";
+import { VibeStrip } from "@/components/VibeStrip";
 import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category } from "@/lib/places";
 
 const Search = z.object({
@@ -151,6 +152,7 @@ function PlansPage() {
                             <p className="font-bold">{pl.name}</p>
                             <p className="text-sm text-muted-foreground">{st.reason}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">{"$".repeat(pl.price)} · ★ {pl.rating}{pl.reviews ? ` (${pl.reviews})` : ""} · {pl.area}{pl.live ? " · live on Google" : ""}</p>
+                            <VibeStrip place={pl} />
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <button aria-label="Swap" onClick={() => setSwap({ p, i })} className="grid h-11 w-11 place-items-center rounded-full border border-border hover:border-primary">⇄</button>
