@@ -26,6 +26,7 @@ const Input = z.object({
   budget: z.number().int().min(0).max(3).default(0),
   maxDrive: z.number().int().min(10).max(90).default(30),
   days: z.number().int().min(1).max(7).default(1),
+  base: z.object({ name: z.string().max(120), lat: z.number(), lng: z.number() }).optional(),
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   city: z.object({ name: z.string().max(80), country: z.string().max(80), cc: z.string().length(2), lat: z.number(), lng: z.number() }).optional(),
   saved: z.array(z.object({
@@ -46,7 +47,7 @@ const AiOut = z.object({
 });
 
 export type Stop = { placeId: string; time: number; reason: string };
-export type Plan = { title: string; vibe: string; stops: Stop[]; day?: string | undefined; date?: string | undefined };
+export type Plan = { title: string; vibe: string; stops: Stop[]; day?: string | undefined; date?: string | undefined; base?: { name: string; lat: number; lng: number } | undefined };
 
 export const generatePlans = createServerFn({ method: "POST" })
   .inputValidator((d) => Input.parse(d))
@@ -80,7 +81,7 @@ export const generatePlans = createServerFn({ method: "POST" })
     if (!areas.length && data.saved.length) areas = [...new Set(data.saved.map((p) => p.area).filter((a) => known.includes(a)))];
     if (!geo && (!areas.length || data.where.includes("Anywhere within 45 min") || data.where.includes("Road trip"))) areas = AREAS;
     // Centres of the chosen areas; include every place within ~25 km so small areas still get full plans.
-    const centers = geo ? [[geo.lat, geo.lng] as [number, number]] : areas.map((a) => AREA_CENTER[a] ?? (() => { const ps = PLACES.filter((p) => p.area === a); return ps.length ? [ps.reduce((x, p) => x + p.lat, 0) / ps.length, ps.reduce((x, p) => x + p.lng, 0) / ps.length] as [number, number] : null; })()).filter(Boolean) as [number, number][];
+    const centers = data.base ? [[data.base.lat, data.base.lng] as [number, number]] : geo ? [[geo.lat, geo.lng] as [number, number]] : areas.map((a) => AREA_CENTER[a] ?? (() => { const ps = PLACES.filter((p) => p.area === a); return ps.length ? [ps.reduce((x, p) => x + p.lat, 0) / ps.length, ps.reduce((x, p) => x + p.lng, 0) / ps.length] as [number, number] : null; })()).filter(Boolean) as [number, number][];
     const radius = areas.length === AREAS.length ? 1e9 : 25;
     const inArea = PLACES.filter((p) => areas.includes(p.area) && p.cat !== "Stay");
     const roadTrip = data.where.includes("Road trip") || /road ?trip/i.test(data.q);
@@ -107,7 +108,7 @@ export const generatePlans = createServerFn({ method: "POST" })
     const liveAreas = geo ? [geo.name] : areas.length === AREAS.length ? (roadTrip ? ["Batroun", "Douma", "Jbeil"] : ["Beirut", "Batroun"]) : areas;
     const avoidCats = new Set(data.avoid.map((a) => a.toLowerCase()));
     let live: Place[] = [];
-    try { live = (await livePlaces({ areas: liveAreas, cats: catList.filter((c) => !avoidCats.has(c.toLowerCase())).slice(0, 7), day: dayOf(0), stay: data.stay, prefs: data.prefs, q: data.q, geo })); } catch (e) { console.error("live", e); }
+    try { live = (await livePlaces({ areas: liveAreas, cats: catList.filter((c) => !avoidCats.has(c.toLowerCase())).slice(0, 7), day: dayOf(0), stay: data.stay, prefs: data.prefs, q: data.q, geo: geo && data.base ? { ...geo, lat: data.base.lat, lng: data.base.lng } : geo })); } catch (e) { console.error("live", e); }
     registerPlaces(live);
     if (geo && live.length < 4) return { error: `We couldn't find enough good spots in ${geo.name} right now. Try a bigger city nearby?` };
     if (live.length >= 10) pool = [...live, ...pool.filter((p) => p.cat === "Hike" || p.cat === "Scenic stop").slice(0, 6)];
@@ -142,7 +143,8 @@ RULES (be the smartest local friend):
 - Everything must fit in the time window, including drives. Drop stops rather than overflow.
 - Never two meals back to back, never two of the same category in a row.
 - For each stop give "time" as "HH:MM" (your suggested arrival).
-${trip ? `TRIP: ${data.days} days in ${region}: ${tripDays.map((d, k) => `Day ${k + 1} = ${d.name} ${d.date}`).join(", ")}. Hours shown are for Day 1; NEVER put a place on a day listed in its closedOn.
+${data.base ? `STAYING AT: ${data.base.name} (lat ${data.base.lat.toFixed(3)}, lng ${data.base.lng.toFixed(3)}). Start every day close to it and finish back near it; prefer places within ~25 min of it, and only go further for a must-see.
+` : ""}${trip ? `TRIP: ${data.days} days in ${region}: ${tripDays.map((d, k) => `Day ${k + 1} = ${d.name} ${d.date}`).join(", ")}. Hours shown are for Day 1; NEVER put a place on a day listed in its closedOn.
 Make exactly ${data.days} plans, plan k is Day k, in order. NEVER repeat a place across days. Give each day its own theme and neighbourhood (e.g. old city icons, food and markets, views and evening, a day trip), and cover the must-see highlights of ${region} across the trip. 3-5 stops a day with real meals. Titles like "Day 1 · Old city icons". Ignore the "3 different plans" rule below.
 ` : ""}Make exactly 3 genuinely different weekend plans in ${region} (e.g. ${geo ? "one food-led, one outdoors or culture, one evening/views" : "one city, one mountain/hike or road trip, one sea"}) fitting the time window.${geo ? " Respect local customs (prayer times, family sections, dress codes) when relevant." : " Road trips may chain nearby areas (e.g. breakfast in Douma then Tannourine hike then lunch)."} Morning starts suit Breakfast/Hike. Suit the group size (solo = cafes/walks, big group = big tables, grills). Each plan has stops in a sensible order (meal times make sense, sunset spots late afternoon, keep drives short unless it is a road trip). Titles short and playful (e.g. "${geo ? `${geo.name} slow ${data.day}` : "Batroun slow Sunday"}"). Vibe is one line like "Pasta, cortado, then sunset". Each stop reason is max 7 words. If "Something new" was asked, prefer new:true places.${saved.length ? `
 SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.filter((p) => saved.some((x) => x.id === p.id)).map((p) => ({ id: p.id, name: p.name, area: p.area, mustOrder: p.dish })))}. Build plans AROUND them: every plan should include at least one saved place (more when they are close together), still respecting hours, timing and geography. Mention the mustOrder dish in that stop's reason when given.` : ""}`;
@@ -191,7 +193,7 @@ SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.f
             t = at;
           }
           out.forEach((o) => taken.add(o.placeId));
-          return { title: p.title, vibe: p.vibe, stops: out, ...(trip ? { day, date: tripDays[k]!.date } : {}) };
+          return { title: p.title, vibe: p.vibe, stops: out, ...(trip ? { day, date: tripDays[k]!.date } : {}), ...(data.base ? { base: data.base } : {}) };
         }).filter((p) => p.stops.length >= 2);
         if (plans.length) {
           const used = [...new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)))].map((id) => byId(id)!).filter((p) => p.live);

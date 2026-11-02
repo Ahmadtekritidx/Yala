@@ -209,3 +209,19 @@ export async function cityNear(lat: number, lng: number): Promise<City | null> {
   const p = ((await res.json()) as { places?: GC[] }).places?.[0];
   return p ? toCity(p) : null;
 }
+
+// Hotels / neighbourhoods for "Where are you staying?", biased to the trip city.
+export async function searchStayList(q: string, near?: { lat: number; lng: number }): Promise<{ name: string; address: string; lat: number; lng: number }[]> {
+  const gkey = googleKey();
+  if (!gkey || !q.trim()) return [];
+  const res = await fetch(PLACES_URL, {
+    method: "POST",
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": "places.displayName,places.location,places.formattedAddress" },
+    body: JSON.stringify({ textQuery: q, pageSize: 5, languageCode: "en",
+      ...(near ? { locationBias: { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: 40000 } } } : {}) }),
+  });
+  if (!res.ok) { console.error("stays", res.status, (await res.text()).slice(0, 200)); return []; }
+  return (((await res.json()) as { places?: G[] }).places ?? [])
+    .filter((p) => p.displayName && p.location)
+    .map((p) => ({ name: p.displayName!.text, address: p.formattedAddress ?? "", lat: p.location!.latitude, lng: p.location!.longitude }));
+}

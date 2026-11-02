@@ -15,6 +15,7 @@ function toRaw(p: Shared) {
     v: p.vibe,
     d: p.day,
     a: p.date,
+    b: p.base ? [p.base.name, +p.base.lat.toFixed(5), +p.base.lng.toFixed(5)] : undefined,
     s: p.stops.map((s) => [s.placeId, s.time, s.reason]),
     x: p.stops
       .map((s) => byId(s.placeId))
@@ -91,6 +92,7 @@ function fromRaw(o: any): Decoded {
     vibe: o.v,
     day: o.d,
     date: o.a,
+    base: Array.isArray(o.b) ? { name: String(o.b[0]), lat: Number(o.b[1]), lng: Number(o.b[2]) } : undefined,
     places,
     stops: o.s.map(([placeId, time, reason]: [string, number, string]) => ({
       placeId,

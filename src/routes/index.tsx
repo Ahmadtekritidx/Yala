@@ -5,7 +5,8 @@ import { toMin } from "@/lib/places";
 import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/profile";
 import { SavedReels } from "@/components/SavedReels";
 import { CityPicker } from "@/components/CityPicker";
-import { encodeCity, isLebanon, LEBANON, loadCity, saveCity, weekendDays, type City } from "@/lib/city";
+import { StayPicker } from "@/components/StayPicker";
+import { encodeBase, type Base, encodeCity, isLebanon, LEBANON, loadCity, saveCity, weekendDays, type City } from "@/lib/city";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -78,6 +79,7 @@ function Home() {
   // Weekend = one day out; Trip = several days somewhere, one plan per day.
   const [mode, setMode] = useState<"weekend" | "trip">("weekend");
   const [days, setDays] = useState(3);
+  const [base, setBase] = useState<Base | null>(null);
   const [start, setStart] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10));
   const setTrip = (on: boolean) => {
     setMode(on ? "trip" : "weekend");
@@ -107,11 +109,11 @@ function Home() {
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   const changeCity = (c: City) => {
-    setCity(c); saveCity(c);
+    setCity(c); saveCity(c); setBase(null);
     setWhere([]);
     if (!weekendDays(c).includes(day)) setDay(weekendDays(c)[0]);
   };
-  const cityParam = { ...(leb ? {} : { city: encodeCity(city) }), ...(mode === "trip" ? { days: String(days), start } : {}) };
+  const cityParam = { ...(leb ? {} : { city: encodeCity(city) }), ...(mode === "trip" ? { days: String(days), start, ...(base ? { base: encodeBase(base) } : {}) } : {}) };
 
   const ready = text.trim().length > 0 || what.length > 0 || where.length > 0 || !leb || mode === "trip";
 
@@ -165,6 +167,8 @@ function Home() {
             className="min-h-11 rounded-full pop press bg-card px-4 text-sm" />
           <span className="text-sm text-muted-foreground">for</span>
           {[2, 3, 4, 5, 7].map((n) => <Chip key={n} label={`${n} days`} on={days === n} onClick={() => setDays(n)} />)}
+          <p className="mt-2 w-full text-xs font-bold uppercase tracking-widest text-muted-foreground">Where are you staying?</p>
+          <StayPicker base={base} near={city} onChange={setBase} />
         </div>
       ) : null}
       <Row title={mode === "trip" ? "Each day" : "Day"}>

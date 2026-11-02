@@ -6,7 +6,9 @@ const CENTER = { Istanbul: CITIES.Istanbul.c, Riyadh: CITIES.Riyadh.c, Dubai: CI
 const HOURS = ["8:00 AM – 11:00 PM", "12:00 – 3:30 PM, 7:00 – 11:30 PM", "Open 24 hours", "Closed", "9:00 AM – 2:00 PM", "6:00 PM – 1:00 AM", "10:00 AM – 10:00 PM"];
 globalThis.__log = [];
 function places(q) {
-  const m = q.match(/^(.*) in ([^,]*), (.*)$/); const [kind, area] = [m[1], m[2]];
+  const m = q.match(/^(.*) in ([^,]*), (.*)$/);
+  if (!m) return [{ id: "stay1", displayName: { text: `${q} Hotel` }, formattedAddress: `${q}, Fatih, Istanbul`, location: { latitude: 41.0055, longitude: 28.9768 } }];
+  const [kind, area] = [m[1], m[2]];
   const c = CENTER[area] ?? CENTER.Beirut; let h = 0; for (const ch of q) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return Array.from({ length: 7 }, (_, i) => ({
     id: `${area}-${kind}-${i}`.replace(/\W+/g, "_"),

@@ -63,4 +63,11 @@ export function recentCities(): City[] {
     return [];
   }
 }
+// Where a traveller sleeps: each trip day starts and ends near it.
+export type Base = { name: string; lat: number; lng: number };
+export const encodeBase = (b: Base) => [b.name.replace(/\|/g, " "), b.lat.toFixed(5), b.lng.toFixed(5)].join("|");
+export function decodeBase(s: string | undefined | null): Base | null {
+  const [name, lat, lng] = (s ?? "").split("|");
+  return name && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)) && lat !== "" ? { name, lat: Number(lat), lng: Number(lng) } : null;
+}
 export const cityLabel = (c: City) => (c.name === c.country ? c.name : `${c.name}, ${c.country}`);

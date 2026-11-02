@@ -115,7 +115,7 @@ export function registerPlaces(list: Place[]) {
 export const byId = (id: string) => LIVE.get(id) ?? PLACES.find((p) => p.id === id);
 export const allPlaces = () => [...LIVE.values(), ...PLACES];
 
-export function driveMins(a: Place, b: Place) {
+export function driveMins(a: Pick<Place, "lat" | "lng">, b: Pick<Place, "lat" | "lng">) {
   const R = 6371, t = Math.PI / 180;
   const d = 2 * R * Math.asin(Math.sqrt(
     Math.sin(((b.lat - a.lat) * t) / 2) ** 2 +

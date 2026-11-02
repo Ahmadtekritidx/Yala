@@ -120,6 +120,7 @@ function SharedPlan() {
       </button>
       {story && <PlanStory plan={plan} onClose={() => setStory(false)} onShare={() => void share(true)} />}
 
+      {plan.base && <p className="mt-6 text-sm text-muted-foreground">🏨 Starts and ends at <span className="font-bold text-foreground">{plan.base.name}</span></p>}
       <ol className="relative mt-10 space-y-8 border-l-2 border-dashed border-primary/40 pl-6">
         {plan.stops.map((s, i) => {
           const pl = byId(s.placeId);
@@ -149,7 +150,7 @@ function SharedPlan() {
         })}
       </ol>
 
-      <a href={`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${gq(stopsP.at(-1)!)}&waypoints=${stopsP.slice(0, -1).map((p) => gq(p)).join("%7C")}`}
+      <a href={`https://www.google.com/maps/dir/?api=1&travelmode=driving${plan.base ? `&origin=${plan.base.lat},${plan.base.lng}` : ""}&destination=${gq(stopsP.at(-1)!)}&waypoints=${stopsP.slice(0, -1).map((p) => gq(p)).join("%7C")}`}
         target="_blank" rel="noreferrer"
         className="mt-12 flex min-h-14 items-center justify-center rounded-2xl pop press bg-accent font-display text-lg font-extrabold text-accent-foreground">
         Open full route in Maps
