@@ -35,6 +35,7 @@ const Q_WORLD: Partial<Record<Category, string>> = {
   Breakfast: "best breakfast",
   Lunch: "best local restaurant",
   Walk: "old town historic walk",
+  "Scenic stop": "top attractions and landmarks",
 };
 const DAY_IDX: Record<string, number> = { Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6 };
 
@@ -80,6 +81,7 @@ async function search(cat: Category, area: string, day: string, stayType: string
       web: p.websiteUri,
       insta: p.websiteUri?.includes("instagram.com") ? p.websiteUri : undefined,
       hours: p.regularOpeningHours?.weekdayDescriptions?.[dayIdx]?.replace(/^\w+:\s*/, ""),
+      week: p.regularOpeningHours?.weekdayDescriptions?.map((d) => d.replace(/^\w+:\s*/, "")),
       live: true,
     }));
   cache.set(text + day, { at: Date.now(), v });

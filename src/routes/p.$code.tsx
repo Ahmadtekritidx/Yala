@@ -55,7 +55,10 @@ function gcal(title: string, vibe: string, day: string, stops: { placeId: string
 }
 
 function SharedPlan() {
-  const { plan } = Route.useLoaderData();
+  const { plan: loaded } = Route.useLoaderData();
+  const [dayIdx, setDayIdx] = useState(0);
+  const plan = loaded?.trip?.[dayIdx] ?? loaded;
+  const when = plan ? plan.date ?? plan.day : "Saturday";
   // The loader may have run on the server: register the plan's live Google places in this browser too
   if (plan?.places.length) registerPlaces(plan.places);
   const router = useRouter();
@@ -77,7 +80,7 @@ function SharedPlan() {
   }
 
   const stopsP = plan.stops.map((s) => byId(s.placeId)).filter(Boolean) as NonNullable<ReturnType<typeof byId>>[];
-  const date = nextDate(plan.day).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const date = nextDate(when).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
   const share = async (asStory = false) => {
     const u = new URL(window.location.href);
@@ -89,7 +92,7 @@ function SharedPlan() {
   };
 
   const cal = () => {
-    const blob = new Blob([ics(plan.title, plan.day, plan.stops)], { type: "text/calendar" });
+    const blob = new Blob([ics(plan.title, when, plan.stops)], { type: "text/calendar" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = "yalla-plan.ics"; a.click();
   };
@@ -98,6 +101,16 @@ function SharedPlan() {
     <main className="mx-auto min-h-screen max-w-xl px-5 pb-20 pt-8">
       <Link to="/" className="font-display text-2xl font-extrabold tracking-tight">yalla<span className="text-primary">.</span></Link>
       <p className="mt-8 text-sm font-bold uppercase tracking-widest text-secondary">{date}</p>
+      {loaded?.trip && (
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Trip days">
+          {loaded.trip.map((d, k) => (
+            <button key={k} role="tab" aria-selected={k === dayIdx} onClick={() => setDayIdx(k)}
+              className={`min-h-11 shrink-0 rounded-full border-2 px-4 text-sm font-bold ${k === dayIdx ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}>
+              Day {k + 1}{d.date ? ` · ${new Date(d.date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short" })}` : ""}
+            </button>
+          ))}
+        </div>
+      )}
       <h1 className="mt-2 font-display text-4xl font-bold leading-tight">{plan.title}</h1>
       <p className="mt-2 text-lg text-muted-foreground">{plan.vibe}</p>
 
@@ -145,7 +158,7 @@ function SharedPlan() {
         <button onClick={() => void share()} className="min-h-12 rounded-2xl pop press bg-primary font-bold text-primary-foreground">{copied ? "Link copied ✓" : "Share"}</button>
         <a href={`https://wa.me/?text=${encodeURIComponent(`${plan.title} — ${plan.vibe}\n`)}${encodeURIComponent(here)}`} target="_blank" rel="noreferrer"
           className="flex min-h-12 items-center justify-center rounded-2xl pop press bg-card font-bold">WhatsApp</a>
-        <a href={gcal(plan.title, plan.vibe, plan.day, plan.stops)} target="_blank" rel="noreferrer"
+        <a href={gcal(plan.title, plan.vibe, when, plan.stops)} target="_blank" rel="noreferrer"
           className="flex min-h-12 items-center justify-center rounded-2xl pop press bg-secondary font-bold text-secondary-foreground">Google Calendar</a>
         <button onClick={cal} className="min-h-12 rounded-2xl pop press bg-card font-bold">Apple / Outlook</button>
       </div>

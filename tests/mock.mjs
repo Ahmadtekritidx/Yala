@@ -1,8 +1,8 @@
 // Test-only: fake Google Places API, the Anthropic API and Firecrawl. Fails loudly if a Lovable service is called.
 const real = globalThis.fetch;
-const CITIES = { Riyadh: { c: [24.7136, 46.6753], country: "Saudi Arabia", cc: "SA" }, Dubai: { c: [25.2048, 55.2708], country: "United Arab Emirates", cc: "AE" } };
+const CITIES = { Riyadh: { c: [24.7136, 46.6753], country: "Saudi Arabia", cc: "SA" }, Dubai: { c: [25.2048, 55.2708], country: "United Arab Emirates", cc: "AE" }, Istanbul: { c: [41.0082, 28.9784], country: "Türkiye", cc: "TR" } };
 const city = (n) => ({ displayName: { text: n }, location: { latitude: CITIES[n].c[0], longitude: CITIES[n].c[1] }, addressComponents: [{ longText: CITIES[n].country, shortText: CITIES[n].cc, types: ["country", "political"] }] });
-const CENTER = { Riyadh: CITIES.Riyadh.c, Dubai: CITIES.Dubai.c, Beirut: [33.895, 35.51], Batroun: [34.256, 35.659], Jbeil: [34.121, 35.646], Jounieh: [33.98, 35.62], Tripoli: [34.44, 35.84], Broummana: [33.883, 35.62], Douma: [34.209, 35.841] };
+const CENTER = { Istanbul: CITIES.Istanbul.c, Riyadh: CITIES.Riyadh.c, Dubai: CITIES.Dubai.c, Beirut: [33.895, 35.51], Batroun: [34.256, 35.659], Jbeil: [34.121, 35.646], Jounieh: [33.98, 35.62], Tripoli: [34.44, 35.84], Broummana: [33.883, 35.62], Douma: [34.209, 35.841] };
 const HOURS = ["8:00 AM – 11:00 PM", "12:00 – 3:30 PM, 7:00 – 11:30 PM", "Open 24 hours", "Closed", "9:00 AM – 2:00 PM", "6:00 PM – 1:00 AM", "10:00 AM – 10:00 PM"];
 globalThis.__log = [];
 function places(q) {
@@ -21,6 +21,13 @@ function places(q) {
 }
 function plan(prompt) {
   const cands = JSON.parse(prompt.match(/Use ONLY these ids: (\[.*?\])\n/s)[1]);
+  const trip = prompt.match(/Make exactly (\d+) plans, plan k is Day k/);
+  if (trip) {
+    const used = new Set(), cats = ["Breakfast", "Scenic stop", "Lunch", "Walk", "Dinner"];
+    return { plans: Array.from({ length: +trip[1] }, (_, k) => ({ title: `Day ${k + 1} · Test day`, vibe: "Sights and food",
+      stops: cats.map((c) => { const x = cands.find((y) => y.category === c && !used.has(y.id)); if (x) used.add(x.id); return x; }).filter(Boolean)
+        .map((x, i) => ({ placeId: x.id, reason: "Good spot", time: ["09:00", "10:30", "13:00", "15:30", "19:30"][i] })) })) };
+  }
   const order = [["Lunch", "Specialty coffee", "Sea view"], ["Brunch", "Walk", "Dessert"], ["Specialty coffee", "Lunch", "Dinner"]];
   return { plans: order.map((cats, k) => ({ title: `Test plan ${k + 1}`, vibe: cats.join(", "),
     stops: cats.map((c) => cands.find((x) => x.category === c && x.id.startsWith("g_")) ?? cands.find((x) => x.category === c) ?? cands[k]).filter(Boolean)

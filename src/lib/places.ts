@@ -5,6 +5,8 @@ export type Place = {
   rating: number; price: 1 | 2 | 3; reason: string; lat: number; lng: number;
   isNew?: boolean; mins: number;
   maps?: string | undefined; web?: string | undefined; insta?: string | undefined; reviews?: number | undefined; hours?: string | undefined; live?: boolean | undefined;
+  /** Opening hours for each weekday, Monday first (live places only). */
+  week?: string[] | undefined;
 };
 
 type Row = [string, string, Category, number, 1 | 2 | 3, string, number, number, boolean?];

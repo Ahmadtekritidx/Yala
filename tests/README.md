@@ -9,6 +9,8 @@ ANTHROPIC_API_KEY=sk-ant-test GOOGLE_PLACES_API_KEY=g-test NODE_OPTIONS="--impor
 node tests/e2e.mjs
 # any city outside Lebanon (Riyadh, Dubai, use my location, profile home city)
 node tests/world.e2e.cjs
+# Istanbul 3-day trip, then a Lebanon weekend
+node tests/trip.e2e.cjs
 # opening-hours parser
 bun tests/hours.test.ts
 ```

@@ -7,13 +7,14 @@ export type Shared = Plan & { day: string; clips?: string[] };
 // First video per stop (curated or saved on this device), so friends see the same story.
 const firstClip = (id: string) => clipsFor(id, savedClips(id))[0]?.url ?? "";
 
-export function encodePlan(p: Shared) {
+function toRaw(p: Shared) {
   const clips = p.clips ?? p.stops.map((s) => firstClip(s.placeId));
-  const raw = JSON.stringify({
+  return {
     c: clips.some(Boolean) ? clips : undefined,
     t: p.title,
     v: p.vibe,
     d: p.day,
+    a: p.date,
     s: p.stops.map((s) => [s.placeId, s.time, s.reason]),
     x: p.stops
       .map((s) => byId(s.placeId))
@@ -33,27 +34,97 @@ export function encodePlan(p: Shared) {
         pl.insta ?? "",
         pl.reviews ?? 0,
       ]),
-  });
-  return btoa(unescape(encodeURIComponent(raw)))
+  };
+}
+const pack = (o: unknown) =>
+  btoa(unescape(encodeURIComponent(JSON.stringify(o))))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
+
+export const encodePlan = (p: Shared) => pack(toRaw(p));
+// A multi-day trip travels as one link: every day in order.
+export const encodeTrip = (days: Shared[]) => pack({ T: days.map(toRaw) });
+
+type Decoded = Shared & { places: Place[]; trip?: Decoded[] | undefined };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromRaw(o: any): Decoded {
+  const places: Place[] = Array.isArray(o.x)
+    ? o.x.map(
+        ([
+          id,
+          name,
+          area,
+          cat,
+          rating,
+          price,
+          lat,
+          lng,
+          mins,
+          maps,
+          web,
+          insta,
+          reviews,
+        ]: any[]) => ({
+          id,
+          name,
+          area,
+          cat,
+          rating,
+          price,
+          lat,
+          lng,
+          mins,
+          reason: "",
+          maps: maps || undefined,
+          web: web || undefined,
+          insta: insta || undefined,
+          reviews,
+          live: true,
+        }),
+      )
+    : [];
+  registerPlaces(places);
+  return {
+    clips: Array.isArray(o.c) ? o.c.map(String) : undefined,
+    title: o.t,
+    vibe: o.v,
+    day: o.d,
+    date: o.a,
+    places,
+    stops: o.s.map(([placeId, time, reason]: [string, number, string]) => ({
+      placeId,
+      time,
+      reason,
+    })),
+  };
 }
 
-export function decodePlan(code: string): (Shared & { places: Place[] }) | null {
+export function decodePlan(code: string): Decoded | null {
   try {
     const b = code.replace(/-/g, "+").replace(/_/g, "/");
     const o = JSON.parse(decodeURIComponent(escape(atob(b))));
-    const places: Place[] = Array.isArray(o.x) ? o.x.map(([id, name, area, cat, rating, price, lat, lng, mins, maps, web, insta, reviews]: any[]) => ({ id, name, area, cat, rating, price, lat, lng, mins, reason: "", maps: maps || undefined, web: web || undefined, insta: insta || undefined, reviews, live: true })) : [];
-    registerPlaces(places);
-    return { clips: Array.isArray(o.c) ? o.c.map(String) : undefined, title: o.t, vibe: o.v, day: o.d, places, stops: o.s.map(([placeId, time, reason]: [string, number, string]) => ({ placeId, time, reason })) };
+    if (Array.isArray(o.T) && o.T.length) {
+      const days = o.T.map(fromRaw);
+      return { ...days[0], trip: days };
+    }
+    return fromRaw(o);
   } catch {
     return null;
   }
 }
 
 export function nextDate(day: string) {
-  const idx = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(day);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(day)) return new Date(day + "T00:00:00");
+  const idx = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ].indexOf(day);
   const target = idx < 0 ? 6 : idx;
   const d = new Date();
   d.setHours(0, 0, 0, 0);

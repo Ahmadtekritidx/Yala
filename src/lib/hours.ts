@@ -39,4 +39,9 @@ export function openAt(h: string | undefined, start: number, mins: number) {
   return r.some(([a, b]) => start >= a && start + need <= b);
 }
 
+export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+// Hours on a given weekday: the full week when we have it, else the one day we fetched.
+export const hoursOn = (p: { hours?: string | undefined; week?: string[] | undefined }, day: string) =>
+  p.week?.[WEEKDAYS.indexOf(day)] ?? p.hours;
+
 export const closedToday = (h: string | undefined) => parseHours(h)?.length === 0;

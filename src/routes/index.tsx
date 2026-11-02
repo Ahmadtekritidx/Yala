@@ -75,6 +75,14 @@ function Home() {
   const [day, setDay] = useState("Saturday");
   const [time, setTime] = useState("12:00");
   const [end, setEnd] = useState("18:00");
+  // Weekend = one day out; Trip = several days somewhere, one plan per day.
+  const [mode, setMode] = useState<"weekend" | "trip">("weekend");
+  const [days, setDays] = useState(3);
+  const [start, setStart] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10));
+  const setTrip = (on: boolean) => {
+    setMode(on ? "trip" : "weekend");
+    if (on) { setTime("09:00"); setEnd("21:00"); } else { setTime("12:00"); setEnd("18:00"); }
+  };
   const [recent, setRecent] = useState<Recent[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [city, setCity] = useState<City>(LEBANON);
@@ -103,9 +111,9 @@ function Home() {
     setWhere([]);
     if (!weekendDays(c).includes(day)) setDay(weekendDays(c)[0]);
   };
-  const cityParam = leb ? {} : { city: encodeCity(city) };
+  const cityParam = { ...(leb ? {} : { city: encodeCity(city) }), ...(mode === "trip" ? { days: String(days), start } : {}) };
 
-  const ready = text.trim().length > 0 || what.length > 0 || where.length > 0 || !leb;
+  const ready = text.trim().length > 0 || what.length > 0 || where.length > 0 || !leb || mode === "trip";
 
   const go = () => {
     if (where[0]) localStorage.setItem("yalla:lastArea", where[0]);
@@ -147,7 +155,20 @@ function Home() {
         {leb && WHERE.map((c) => <Chip key={c} label={c} on={where.includes(c)} onClick={() => toggle(where, setWhere, c)} />)}
       </Row>
       <Row title="When">
-        {DAYS.map((d) => <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />)}
+        <Chip label="This weekend" on={mode === "weekend"} onClick={() => setTrip(false)} />
+        <Chip label="A trip (several days)" on={mode === "trip"} onClick={() => setTrip(true)} />
+      </Row>
+      {mode === "trip" ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="text-sm text-muted-foreground" htmlFor="trip-start">From</label>
+          <input id="trip-start" type="date" value={start} onChange={(e) => setStart(e.target.value)}
+            className="min-h-11 rounded-full pop press bg-card px-4 text-sm" />
+          <span className="text-sm text-muted-foreground">for</span>
+          {[2, 3, 4, 5, 7].map((n) => <Chip key={n} label={`${n} days`} on={days === n} onClick={() => setDays(n)} />)}
+        </div>
+      ) : null}
+      <Row title={mode === "trip" ? "Each day" : "Day"}>
+        {mode === "weekend" && DAYS.map((d) => <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />)}
         <input
           type="time"
           value={time}
@@ -163,7 +184,7 @@ function Home() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && ready) go(); }}
-        placeholder="Or type it: Italian lunch in Batroun then coffee"
+        placeholder={leb ? "Or type it: Italian lunch in Batroun then coffee" : mode === "trip" ? "Or type it: food markets, museums, no early mornings" : "Or type it: brunch, a walk, then sunset"}
         className="mt-6 min-h-12 w-full rounded-2xl pop bg-card px-4 text-base outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
       />
 
@@ -173,12 +194,12 @@ function Home() {
         onClick={go}
         className="mt-10 min-h-14 w-full rounded-2xl pop press bg-primary font-display text-lg font-bold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        Give me 3 plans
+        {mode === "trip" ? `Plan my ${days} days` : "Give me 3 plans"}
       </button>
 
       <SavedReels onPlan={() => navigate({ to: "/plans", search: { q: text.trim() || "Build it around my saved places", what: what.join(","), where: where.join(","), day, time, end, saved: "1", ...cityParam } })} />
 
-      <section className="mt-16">
+      {leb && <section className="mt-16">
         <h2 className="font-display text-xl font-bold">Plans people loved</h2>
         <div className="mt-3 grid gap-3">
           {(leb ? LOVED : []).map((l) => (
@@ -191,7 +212,7 @@ function Home() {
             </button>
           ))}
         </div>
-      </section>
+      </section>}
 
       <section className="mt-12">
         <h2 className="font-display text-xl font-bold">Recent plans</h2>

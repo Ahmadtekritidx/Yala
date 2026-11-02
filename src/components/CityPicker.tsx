@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { cityFromLocation, searchCities } from "@/lib/city.functions";
-import { cityLabel, LEBANON, type City } from "@/lib/city";
+import { cityLabel, LEBANON, recentCities, type City } from "@/lib/city";
 
 const POPULAR: City[] = [
   LEBANON,
@@ -25,9 +25,19 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
   const [msg, setMsg] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
+  const [recent, setRecent] = useState<City[]>([]);
   useEffect(() => {
-    if (open) input.current?.focus();
+    if (open) {
+      input.current?.focus();
+      setRecent(recentCities());
+    }
   }, [open]);
+  const same = (a: City, b: City) => a.name === b.name && a.cc === b.cc;
+  const list = results.length
+    ? results
+    : q.trim().length < 2
+      ? [...recent, ...POPULAR.filter((c) => !recent.some((r) => same(r, c)))]
+      : [];
 
   // Debounced Google city search
   useEffect(() => {
@@ -110,7 +120,7 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
             {busy ? "Finding you…" : "◎ Use my location"}
           </button>
           <ul className="mt-1">
-            {(results.length ? results : q.trim().length < 2 ? POPULAR : []).map((c) => (
+            {list.map((c) => (
               <li key={`${c.name}-${c.cc}-${c.lat}`}>
                 <button
                   type="button"

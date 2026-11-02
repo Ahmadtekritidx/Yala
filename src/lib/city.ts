@@ -49,8 +49,18 @@ export function loadCity(): City {
 export function saveCity(c: City) {
   try {
     localStorage.setItem(KEY, encodeCity(c));
+    const rest = recentCities().filter((x) => !(x.name === c.name && x.cc === c.cc));
+    localStorage.setItem(KEY + ":recent", JSON.stringify([c, ...rest].slice(0, 4).map(encodeCity)));
   } catch {
     /* storage blocked */
+  }
+}
+// Last few cities, so going from a trip back home is one tap.
+export function recentCities(): City[] {
+  try {
+    return (JSON.parse(localStorage.getItem(KEY + ":recent") ?? "[]") as string[]).map(decodeCity).filter((c): c is City => !!c);
+  } catch {
+    return [];
   }
 }
 export const cityLabel = (c: City) => (c.name === c.country ? c.name : `${c.name}, ${c.country}`);

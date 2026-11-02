@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { encodePlan, saveRecent } from "@/lib/share";
+import { encodePlan, encodeTrip, saveRecent } from "@/lib/share";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { generatePlans, type Plan, type Stop } from "@/lib/plans.functions";
 import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category, type Place } from "@/lib/places";
-import { openAt } from "@/lib/hours";
+import { hoursOn, openAt } from "@/lib/hours";
 import { VibeStrip } from "@/components/VibeStrip";
 import { decodeCity, isLebanon } from "@/lib/city";
 import { loadSaved, type Saved } from "@/lib/saved";
@@ -26,6 +26,8 @@ const Search = z.object({
   drive: z.coerce.string().optional().default("30"),
   saved: z.string().optional().default(""),
   city: z.string().optional().default(""),
+  days: z.coerce.string().optional().default("1"),
+  start: z.string().optional().default(""),
 });
 
 // Keep the last result per request in this tab, so "Edit plan" and back navigation
@@ -74,7 +76,9 @@ function PlansPage() {
   const [mySaves, setMySaves] = useState<Saved[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const label = [s.q, s.what.replaceAll(",", ", "), s.where.replaceAll(",", ", ")].filter(Boolean).join(" · ") || "Surprise me";
+  const tripDays = Number(s.days) > 1 ? Number(s.days) : 0;
+  const cityName = decodeCity(s.city)?.name;
+  const label = [tripDays ? `${tripDays}-day trip${cityName ? ` in ${cityName}` : ""}` : "", s.q, s.what.replaceAll(",", ", "), s.where.replaceAll(",", ", ")].filter(Boolean).join(" · ") || "Surprise me";
   const key = cacheKey(s);
 
   useEffect(() => { if (plans) writeCache(key, plans); }, [plans, key]);
@@ -87,7 +91,7 @@ function PlansPage() {
     if (hit) { registerPlaces(hit.places); setPlans(hit.plans); return; }
     const savedInput = s.saved === "1" ? saves.slice(0, 15).map((x) => ({ ...x.place, hours: undefined, isNew: undefined, dish: x.dish })) : [];
     const iv = setInterval(() => setMsg((m) => (m + 1) % LOADING.length), 1400);
-    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30, saved: savedInput, ...(() => { const c = decodeCity(s.city); return c && !isLebanon(c) ? { city: c } : {}; })() } })
+    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30, saved: savedInput, days: Math.min(7, Math.max(1, Number(s.days) || 1)), ...(/^\d{4}-\d{2}-\d{2}$/.test(s.start) ? { start: s.start } : {}), ...(() => { const c = decodeCity(s.city); return c && !isLebanon(c) ? { city: c } : {}; })() } })
       .then((r) => { if ("error" in r && r.error) return setError(r.error); if (r.places) registerPlaces(r.places); setPlans(r.plans!); })
       .catch(() => setError("Something broke on our side. Try again?"))
       .finally(() => clearInterval(iv));
@@ -167,6 +171,7 @@ function PlansPage() {
             const cost = plan.stops.reduce((a, st) => a + ([0, 8, 20, 45][byId(st.placeId)!.price] ?? 0), 0);
             return (
               <article key={p} className="rounded-2xl pop press bg-card p-5">
+                {plan.date && <p className="text-xs font-bold uppercase tracking-widest text-secondary">{new Date(plan.date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}</p>}
                 <h2 className="font-display text-2xl font-bold leading-tight">{plan.title}</h2>
                 <p className="mt-1 text-muted-foreground">{plan.vibe}</p>
                 <ol className="mt-5 space-y-1">
@@ -183,11 +188,12 @@ function PlansPage() {
                             <p className="font-bold">{pl.name}{mySaves.some((x) => x.place.id === pl.id) && <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">♥ your save</span>}</p>
                             <p className="text-sm text-muted-foreground">{st.reason}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">{"$".repeat(pl.price)} · ★ {pl.rating}{pl.reviews ? ` (${pl.reviews})` : ""} · {pl.area}{pl.live ? " · live on Google" : ""}</p>
-                            {pl.hours && (
-                              <p className={`mt-0.5 text-xs ${openAt(pl.hours, st.time, pl.mins) ? "text-muted-foreground" : "font-bold text-destructive"}`}>
-                                {openAt(pl.hours, st.time, pl.mins) ? `Open ${s.day}: ${pl.hours}` : `Closed at this time (${pl.hours}). Swap it?`}
-                              </p>
-                            )}
+                            {(() => {
+                              const d = plan.day ?? s.day, h = hoursOn(pl, d);
+                              if (!h) return null;
+                              const open = openAt(h, st.time, pl.mins);
+                              return <p className={`mt-0.5 text-xs ${open ? "text-muted-foreground" : "font-bold text-destructive"}`}>{open ? `Open ${d}: ${h}` : `Closed at this time (${h}). Swap it?`}</p>;
+                            })()}
                             <VibeStrip place={pl} />
                           </div>
                           <div className="flex shrink-0 gap-1">
@@ -211,7 +217,7 @@ function PlansPage() {
                 {noAdd && adding === null && <p className="text-xs text-muted-foreground">No {noAdd.toLowerCase()} spot within 45 min of the last stop.</p>}
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
                   <p className="text-sm text-muted-foreground">{Math.round(total / 30) / 2}h{lastPlace?.cat === "Stay" ? " + overnight" : ""} · ~${cost}/person{Number(s.people) > 1 ? ` · ~$${cost * Number(s.people)} for ${s.people}` : ""}</p>
-                  <button className="min-h-11 rounded-xl pop press bg-primary px-5 font-bold text-primary-foreground" onClick={() => { const code = encodePlan({ ...plan, day: s.day }); saveRecent(code, plan.title); navigate({ to: "/p/$code", params: { code } }); }}>Pick this plan</button>
+                  <button className="min-h-11 rounded-xl pop press bg-primary px-5 font-bold text-primary-foreground" onClick={() => { const code = tripDays ? encodeTrip(plans.map((x) => ({ ...x, day: x.day ?? s.day }))) : encodePlan({ ...plan, day: s.day }); saveRecent(code, tripDays ? `${tripDays} days${cityName ? ` in ${cityName}` : ""}` : plan.title); navigate({ to: "/p/$code", params: { code } }); }}>{tripDays ? "Open the trip" : "Pick this plan"}</button>
                 </div>
               </article>
             );
