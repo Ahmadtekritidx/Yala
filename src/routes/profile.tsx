@@ -1,3 +1,4 @@
+import { AddArea } from "@/components/AddArea";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AREAS, AVOIDS, DIETS, EMPTY, LIKES, STAYS, loadProfile, saveProfile, type Profile } from "@/lib/profile";
@@ -72,6 +73,8 @@ function ProfilePage() {
 
       <Section title="Home area" hint="We start from here when you don't pick a place.">
         {AREAS.map((a) => <Chip key={a} label={a} on={p.homeArea === a} onClick={() => set("homeArea", p.homeArea === a ? "" : a)} />)}
+        {p.homeArea && !AREAS.includes(p.homeArea) && <Chip label={`${p.homeArea} ✕`} on onClick={() => set("homeArea", "")} />}
+        <AddArea placeholder="+ Somewhere else" onAdd={(a) => set("homeArea", a)} />
       </Section>
 
       <Section title="Usually going out as">

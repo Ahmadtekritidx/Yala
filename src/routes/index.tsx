@@ -1,3 +1,4 @@
+import { AddArea } from "@/components/AddArea";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { encodePlan } from "@/lib/share";
@@ -130,6 +131,8 @@ function Home() {
       </Row>
       <Row title="Where">
         {WHERE.map((c) => <Chip key={c} label={c} on={where.includes(c)} onClick={() => toggle(where, setWhere, c)} />)}
+        {where.filter((c) => !WHERE.includes(c)).map((c) => <Chip key={c} label={`${c} ✕`} on onClick={() => toggle(where, setWhere, c)} />)}
+        <AddArea onAdd={(a) => setWhere((w) => (w.some((x) => x.toLowerCase() === a.toLowerCase()) ? w : [...w, a]))} />
       </Row>
       <Row title="When">
         {DAYS.map((d) => <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />)}

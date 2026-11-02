@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
 import { VibeStrip } from "@/components/VibeStrip";
 import { PlanStory } from "@/components/PlanStory";
-import { byId, fmt, driveMins, registerPlaces } from "@/lib/places";
+import { byId, fmt, driveMins, registerPlaces, placeLabel } from "@/lib/places";
 
 export const Route = createFileRoute("/p/$code")({
   loader: ({ params }) => ({ plan: decodePlan(params.code) }),
@@ -30,12 +30,12 @@ function ics(title: string, day: string, stops: { placeId: string; time: number 
   };
   const ev = stops.map((s, i) => {
     const pl = byId(s.placeId)!;
-    return `BEGIN:VEVENT\nUID:yalla-${Date.now()}-${i}\nDTSTAMP:${f(0)}\nDTSTART:${f(s.time)}\nDTEND:${f(s.time + pl.mins)}\nSUMMARY:${pl.name} (${title})\nLOCATION:${pl.name}, ${pl.area}, Lebanon\nEND:VEVENT`;
+    return `BEGIN:VEVENT\nUID:yalla-${Date.now()}-${i}\nDTSTAMP:${f(0)}\nDTSTART:${f(s.time)}\nDTEND:${f(s.time + pl.mins)}\nSUMMARY:${pl.name} (${title})\nLOCATION:${placeLabel(pl.name, pl.area)}\nEND:VEVENT`;
   });
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Yalla//EN\r\n${ev.join("\r\n")}\r\nEND:VCALENDAR`.replace(/\n(?!\r)/g, "\r\n").replace(/\r\r/g, "\r");
 }
 
-const gq = (name: string, area: string) => encodeURIComponent(`${name}, ${area}, Lebanon`);
+const gq = (name: string, area: string) => encodeURIComponent(placeLabel(name, area));
 const mapsPlace = (name: string, area: string) => `https://www.google.com/maps/search/?api=1&query=${gq(name, area)}`;
 const insta = (name: string) => `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(name)}`;
 
@@ -110,7 +110,7 @@ function SharedPlan() {
           const pl = byId(s.placeId);
           if (!pl) return null;
           const prev = i > 0 ? byId(plan.stops[i - 1]!.placeId) : undefined;
-          const q = encodeURIComponent(`${pl.name}, ${pl.area}, Lebanon`);
+          const q = encodeURIComponent(placeLabel(pl.name, pl.area));
           return (
             <li key={i} className="relative">
               <span className="absolute -left-[33px] top-1 h-4 w-4 rounded-full border-4 border-background bg-primary" />

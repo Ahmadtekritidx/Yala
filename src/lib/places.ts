@@ -100,6 +100,11 @@ export const CATEGORIES = Object.keys(DUR) as Category[];
 export const AREA_CENTER: Record<string, [number, number]> = {
   Broummana: [33.883, 35.62], Jounieh: [33.98, 35.62], Tripoli: [34.44, 35.84],
 };
+// Areas we know are in Lebanon. Anything else the user types is a custom place anywhere in the world.
+const LB_AREAS = new Set([...AREAS, ...Object.keys(AREA_CENTER), "Lebanon"].map((a) => a.toLowerCase()));
+export const isLebanon = (area: string) => !area || LB_AREAS.has(area.trim().toLowerCase());
+// "Name, Area, Lebanon" for Lebanese areas, "Name, Area" for everywhere else
+export const placeLabel = (name: string, area: string) => [name, area, isLebanon(area) ? "Lebanon" : ""].filter(Boolean).join(", ");
 export function kmBetween(a: [number, number], b: [number, number]) {
   const R = 6371, t = Math.PI / 180;
   return 2 * R * Math.asin(Math.sqrt(Math.sin(((b[0] - a[0]) * t) / 2) ** 2 + Math.cos(a[0] * t) * Math.cos(b[0] * t) * Math.sin(((b[1] - a[1]) * t) / 2) ** 2));

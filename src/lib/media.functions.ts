@@ -104,7 +104,7 @@ export const readReel = createServerFn({ method: "POST" })
     const known = allPlaces()
       .filter((p) => p.cat !== "Stay")
       .map((p) => ({ id: p.id, name: p.name, area: p.area }));
-    const ai = await askJSON(`You find the ONE real place in Lebanon that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`, `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`, Out, "low");
+    const ai = await askJSON(`You find the ONE real place (usually in Lebanon, but it can be anywhere in the world) that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town or city (add the country if it is outside Lebanon). dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`, `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`, Out, "low");
     if (!ai.ok) {
       console.error("readReel", ai.kind, ai.error);
       return { error: "Couldn't find a place in this post. Add the name and try again." };

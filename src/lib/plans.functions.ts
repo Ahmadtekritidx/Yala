@@ -5,8 +5,8 @@ import { getRequestHeader } from "@tanstack/react-start/server";
 const LIMIT = 20, WINDOW = 3600e3;
 const hits = new Map<string, number[]>();
 import { z } from "zod";
-import { CATEGORIES, PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
-import { livePlaces, findInstas, placesStatus } from "./live.server";
+import { CATEGORIES, PLACES, AREAS, AREA_CENTER, isLebanon, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
+import { livePlaces, findInstas, placesStatus, geocodeArea } from "./live.server";
 import { openAt, closedToday } from "./hours";
 import { aiConfigured, aiStatus, askJSON, PlanOut } from "./ai.server";
 
@@ -64,9 +64,17 @@ export const generatePlans = createServerFn({ method: "POST" })
     areas = [...new Set([...areas, ...mentioned])];
     // Saved-from-reels places pull their areas in when the user did not pick any.
     if (!areas.length && data.saved.length) areas = [...new Set(data.saved.map((p) => p.area).filter((a) => known.includes(a)))];
-    if (!areas.length || data.where.includes("Anywhere within 45 min") || data.where.includes("Road trip")) areas = AREAS;
+    // Custom areas the user typed (any town or city in the world, not just our Lebanese list)
+    const SPECIAL = ["Anywhere within 45 min", "Road trip"];
+    const custom = [...new Set(data.where.map((a) => a.trim().slice(0, 60)).filter((a) => a && !known.includes(a) && !SPECIAL.includes(a)))].slice(0, 3);
+    if (!areas.length && !custom.length && data.saved.length) areas = [...new Set(data.saved.map((p) => p.area).filter((a) => a && !isLebanon(a)))].slice(0, 3);
+    const abroad = custom.length > 0 || areas.some((a) => !isLebanon(a));
+    if (abroad) areas = [...new Set([...custom, ...areas.filter((a) => !isLebanon(a))])];
+    else if (!areas.length || data.where.includes("Anywhere within 45 min") || data.where.includes("Road trip")) areas = AREAS;
     // Centres of the chosen areas; include every place within ~25 km so small areas still get full plans.
-    const centers = areas.map((a) => AREA_CENTER[a] ?? (() => { const ps = PLACES.filter((p) => p.area === a); return ps.length ? [ps.reduce((x, p) => x + p.lat, 0) / ps.length, ps.reduce((x, p) => x + p.lng, 0) / ps.length] as [number, number] : null; })()).filter(Boolean) as [number, number][];
+    const centers = abroad
+      ? (await Promise.all(areas.map((a) => geocodeArea(a).catch(() => null)))).filter(Boolean) as [number, number][]
+      : areas.map((a) => AREA_CENTER[a] ?? (() => { const ps = PLACES.filter((p) => p.area === a); return ps.length ? [ps.reduce((x, p) => x + p.lat, 0) / ps.length, ps.reduce((x, p) => x + p.lng, 0) / ps.length] as [number, number] : null; })()).filter(Boolean) as [number, number][];
     const radius = areas.length === AREAS.length ? 1e9 : 25;
     const inArea = PLACES.filter((p) => areas.includes(p.area) && p.cat !== "Stay");
     const roadTrip = data.where.includes("Road trip") || /road ?trip/i.test(data.q);
@@ -75,6 +83,8 @@ export const generatePlans = createServerFn({ method: "POST" })
       : PLACES.filter((p) => areas.includes(p.area) || centers.some((c) => kmBetween(c, [p.lat, p.lng]) <= radius));
     if (pool.length < 12) pool = PLACES.filter((p) => centers.some((c) => kmBetween(c, [p.lat, p.lng]) <= 45));
     if (pool.length < 8) pool = PLACES;
+    // Outside Lebanon our curated list doesn't help: plan only from live Google results (and saved places)
+    if (abroad) pool = [];
     // Live Google Places for the chosen areas
     const st = toMin(data.time), en = data.end ? toMin(data.end) : st + 8 * 60;
     const cats = new Set<Category>(["Specialty coffee", "Dessert"]);
@@ -87,7 +97,7 @@ export const generatePlans = createServerFn({ method: "POST" })
     if (en >= 17 * 60) cats.add("Sea view");
     if (/hike|hiking|nature|mountain/.test(wants)) cats.add("Hike");
     if (data.stay !== "No") cats.add("Stay");
-    const liveAreas = areas.length === AREAS.length ? (roadTrip ? ["Batroun", "Douma", "Jbeil"] : ["Beirut", "Batroun"]) : areas;
+    const liveAreas = abroad ? areas : areas.length === AREAS.length ? (roadTrip ? ["Batroun", "Douma", "Jbeil"] : ["Beirut", "Batroun"]) : areas;
     const avoidCats = new Set(data.avoid.map((a) => a.toLowerCase()));
     let live: Place[] = [];
     try { live = (await livePlaces({ areas: liveAreas, cats: [...cats].filter((c) => !avoidCats.has(c.toLowerCase())).slice(0, 7), day: data.day, stay: data.stay, prefs: data.prefs, q: data.q })); } catch (e) { console.error("live", e); }
@@ -117,16 +127,16 @@ NOT into (never include these): ${data.avoid.join(", ") || "nothing"}. Preferenc
 Overnight: ${data.stay === "No" ? "no, day trip only. Never use Stay places." : `yes, end each plan with ONE Stay place of type "${data.stay === "Surprise me" ? "any" : data.stay}" (its note starts with the type), in or near the last area. The Stay counts as an extra stop.`}
 RULES (be the smartest local friend):
 - Timing: breakfast 8:00-10:30, brunch 10:00-13:00, lunch 12:30-15:30, dinner 19:30-22:30, hikes start before 11:00, Sea view / sunset stops ~45 min before sunset (${sunset} today). Coffee/dessert between meals.
-- Geography: estimate drives from lat/lng (~1.5 min per km on Lebanese roads, mountains slower). Order stops so the route flows one direction, never backtrack. Max ${data.maxDrive} min between stops unless it is a road trip (max 60).
+- Geography: estimate drives from lat/lng (~1.5 min per km on local roads, mountains slower). Order stops so the route flows one direction, never backtrack. Max ${data.maxDrive} min between stops unless it is a road trip (max 60).
 - Everything must fit in the time window, including drives. Drop stops rather than overflow.
 - Never two meals back to back, never two of the same category in a row.
 - For each stop give "time" as "HH:MM" (your suggested arrival).
-Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hike or road trip, one sea) fitting the time window. Road trips may chain nearby areas (e.g. breakfast in Douma then Tannourine hike then lunch). Morning starts suit Breakfast/Hike. Suit the group size (solo = cafes/walks, big group = big tables, grills). Each plan has stops in a sensible order (meal times make sense, sunset spots late afternoon, keep drives short unless it is a road trip). Titles short and playful (e.g. "Batroun slow Sunday"). Vibe is one line like "Pasta, cortado, then sunset". Each stop reason is max 7 words. If "Something new" was asked, prefer new:true places.${saved.length ? `
+Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hike or road trip, one sea) fitting the time window. Road trips may chain nearby areas (e.g. breakfast in Douma then Tannourine hike then lunch).${abroad ? ` The user is planning OUTSIDE Lebanon (${areas.join(", ")}): only use the given candidates there, never Lebanese places.` : ""} Morning starts suit Breakfast/Hike. Suit the group size (solo = cafes/walks, big group = big tables, grills). Each plan has stops in a sensible order (meal times make sense, sunset spots late afternoon, keep drives short unless it is a road trip). Titles short and playful (e.g. "Batroun slow Sunday"). Vibe is one line like "Pasta, cortado, then sunset". Each stop reason is max 7 words. If "Something new" was asked, prefer new:true places.${saved.length ? `
 SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.map((p) => ({ id: p.id, name: p.name, area: p.area, mustOrder: p.dish })))}. Build plans AROUND them: every plan should include at least one saved place (more when they are close together), still respecting hours, timing and geography. Mention the mustOrder dish in that stop's reason when given.` : ""}`;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await askJSON(
-        "You plan fun Lebanese weekend outings, like the smartest local friend. Light, slightly Lebanese tone in English. Use only the place ids you are given.",
+        "You plan fun weekend outings (mostly in Lebanon, sometimes anywhere in the world), like the smartest local friend. Light, slightly Lebanese tone in English. Use only the place ids you are given.",
         prompt,
         PlanOut,
       );

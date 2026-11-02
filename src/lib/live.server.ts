@@ -1,4 +1,4 @@
-import { DUR, type Category, type Place } from "./places";
+import { DUR, isLebanon, type Category, type Place } from "./places";
 
 // Google Places API (New), called directly with our own key
 const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
@@ -36,13 +36,13 @@ export const cuisineOf = (text: string) => CUISINES.find((c) => new RegExp(`\\b$
 
 async function search(cat: Category, area: string, day: string, stayType: string, gkey: string, diet = "", cuisine = ""): Promise<Place[]> {
   const meal = cat === "Lunch" || cat === "Dinner" ? (cuisine ? `${cuisine} restaurant` : Q[cat]) : Q[cat];
-  const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${area}, Lebanon`;
+  const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${area}${isLebanon(area) ? ", Lebanon" : ""}`;
   const hit = cache.get(text + day);
   if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.v;
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
-    body: JSON.stringify({ textQuery: text, pageSize: 7, regionCode: "LB", languageCode: "en" }),
+    body: JSON.stringify({ textQuery: text, pageSize: 7, ...(isLebanon(area) ? { regionCode: "LB" } : {}), languageCode: "en" }),
   });
   if (!res.ok) { lastError = `${res.status} ${(await res.text()).slice(0, 200)}`; console.error("places", lastError); return []; }
   const json = (await res.json()) as { places?: G[] };
@@ -96,7 +96,7 @@ export async function findInstas(places: Place[]) {
       const res = await fetch("https://api.firecrawl.dev/v2/search", {
         method: "POST", signal: ctl.signal,
         headers: { Authorization: `Bearer ${fc}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: `site:instagram.com ${p.name} ${p.area} Lebanon`, limit: 4 }),
+        body: JSON.stringify({ query: `site:instagram.com ${p.name} ${p.area}${isLebanon(p.area) ? " Lebanon" : ""}`, limit: 4 }),
       });
       clearTimeout(t);
       if (!res.ok) return;
@@ -124,6 +124,24 @@ export async function placesStatus() {
   return out;
 }
 
+// Centre of any town or city in the world, for custom areas the user types.
+const geoCache = new Map<string, [number, number] | null>();
+export async function geocodeArea(area: string): Promise<[number, number] | null> {
+  const k = area.trim().toLowerCase();
+  if (geoCache.has(k)) return geoCache.get(k)!;
+  const gkey = googleKey();
+  if (!gkey) return null;
+  const res = await fetch(PLACES_URL, {
+    method: "POST",
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": "places.location" },
+    body: JSON.stringify({ textQuery: area, pageSize: 1, languageCode: "en" }),
+  }).catch(() => null);
+  const loc = res?.ok ? ((await res.json()) as { places?: G[] }).places?.[0]?.location : undefined;
+  const v: [number, number] | null = loc ? [loc.latitude, loc.longitude] : null;
+  geoCache.set(k, v);
+  return v;
+}
+
 // Look up one named place (e.g. pulled from a reel caption) on Google Places.
 export async function findPlace(name: string, area: string, cat: Category): Promise<Place | null> {
   const gkey = googleKey();
@@ -131,7 +149,7 @@ export async function findPlace(name: string, area: string, cat: Category): Prom
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
-    body: JSON.stringify({ textQuery: `${name}${area ? ` ${area}` : ""}, Lebanon`, pageSize: 1, regionCode: "LB", languageCode: "en" }),
+    body: JSON.stringify({ textQuery: `${name}${area ? ` ${area}` : ""}${area && isLebanon(area) ? ", Lebanon" : ""}`, pageSize: 1, ...(area && isLebanon(area) ? { regionCode: "LB" } : {}), languageCode: "en" }),
   });
   if (!res.ok) { console.error("findPlace", res.status); return null; }
   const p = ((await res.json()) as { places?: G[] }).places?.[0];
@@ -140,7 +158,7 @@ export async function findPlace(name: string, area: string, cat: Category): Prom
   return {
     id: "g_" + p.id,
     name: p.displayName.text,
-    area: area || (p.formattedAddress?.split(",").at(-2)?.trim() ?? "Lebanon"),
+    area: area || (p.formattedAddress?.split(",").at(-2)?.trim() ?? ""),
     cat,
     rating: p.rating ?? 4.3,
     reviews: p.userRatingCount,
