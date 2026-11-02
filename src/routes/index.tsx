@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { encodePlan } from "@/lib/share";
 import { toMin } from "@/lib/places";
+import { SavedReels } from "@/components/SavedReels";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -145,6 +146,8 @@ function Home() {
       >
         Give me 3 plans
       </button>
+
+      <SavedReels onPlan={() => navigate({ to: "/plans", search: { q: text.trim() || "Build it around my saved places", what: what.join(","), where: where.join(","), day, time, end, saved: "1" } })} />
 
       <section className="mt-16">
         <h2 className="font-display text-xl font-bold">Plans people loved</h2>
