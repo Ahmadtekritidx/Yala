@@ -109,7 +109,7 @@ await vis(page.locator("article"), 20000);
 ok("quick button gives plans", (await page.locator("article").count()) >= 1, (await page.locator("main").innerText()).slice(0, 160));
 ok("avoid Hike respected", (await page.locator("article").getByText(/^Hike$/).count()) === 0);
 await page.goto(B + "/status"); await vis(page.getByText(/coffee shops in Beirut|returned no places|Missing/));
-ok("status shows OpenAI direct", (await page.getByText(/OpenAI direct/).count()) === 1 && (await page.getByText(/answered/).count()) === 1, (await page.locator("main").innerText()).slice(0, 300));
+ok("status shows Claude answered", (await page.getByText("claude-opus-5-5 answered").count()) === 1, (await page.locator("main").innerText()).slice(0, 300));
 ok("status page runs live search", (await page.getByText(/coffee shops in Beirut/).count()) === 1, (await page.locator("main").innerText()).slice(0, 300));
 await shot("06-status");
 await page.goto(B + "/profile"); await page.waitForLoadState("networkidle"); await vis(page.locator("#name[value='Ahmad']")); await page.getByRole("button", { name: "Reset" }).click(); await page.waitForTimeout(300);

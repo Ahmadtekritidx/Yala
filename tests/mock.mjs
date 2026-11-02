@@ -1,4 +1,4 @@
-// Test-only: fake Google Places (via Lovable gateway), the AI gateway and Firecrawl.
+// Test-only: fake Google Places API, the Anthropic API and Firecrawl. Fails loudly if a Lovable service is called.
 const real = globalThis.fetch;
 const CENTER = { Beirut: [33.895, 35.51], Batroun: [34.256, 35.659], Jbeil: [34.121, 35.646], Jounieh: [33.98, 35.62], Tripoli: [34.44, 35.84], Broummana: [33.883, 35.62], Douma: [34.209, 35.841] };
 const HOURS = ["8:00 AM – 11:00 PM", "12:00 – 3:30 PM, 7:00 – 11:30 PM", "Open 24 hours", "Closed", "9:00 AM – 2:00 PM", "6:00 PM – 1:00 AM", "10:00 AM – 10:00 PM"];
@@ -26,18 +26,22 @@ function plan(prompt) {
 }
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
-  if (u.includes("connector-gateway.lovable.dev/google_maps")) {
+  if (u.includes("lovable.dev")) throw new Error("Lovable service called: " + u);
+  if (u.startsWith("https://places.googleapis.com/v1/places:searchText")) {
+    const h = new Headers(init.headers);
+    if (h.get("x-goog-api-key") !== "g-test") return new Response('{"error":{"code":403,"message":"API key not valid"}}', { status: 403 });
     const b = JSON.parse(init.body); 
     if (process.env.MOCK_GOOGLE_FAIL) return new Response('{"error":{"code":403,"message":"API key not valid"}}', { status: 403 });
     return new Response(JSON.stringify({ places: places(b.textQuery) }), { status: 200 });
   }
-  if (u.includes("ai.gateway.lovable.dev") || u.includes("api.openai.com")) {
-    if (u.includes("api.openai.com") && !init.headers?.Authorization?.includes("sk-test")) return new Response('{"error":{"message":"bad key"}}', { status: 401 });
+  if (u.startsWith("https://api.anthropic.com/v1/messages")) {
+    const h = new Headers(init.headers);
+    if (h.get("x-api-key") !== "sk-ant-test" && h.get("authorization") !== "Bearer sk-ant-test") return new Response('{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', { status: 401 });
     const b = JSON.parse(init.body); const prompt = b.messages.at(-1).content;
-    (globalThis.__models ??= []).push(u.includes("openai.com") ? b.model : "lovable:" + b.model);
-    if (prompt.startsWith("Return {")) return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200 });
-    globalThis.__log.push(["ai", prompt.length]);
-    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(plan(prompt)) } }] }), { status: 200 });
+    if (b.model !== "claude-opus-5-5" || b.fallbacks !== "default" || !b.output_config?.format) throw new Error("unexpected request " + JSON.stringify({ model: b.model, fallbacks: b.fallbacks }));
+    const out = prompt.startsWith("Return {") ? { ok: true } : plan(prompt);
+    return new Response(JSON.stringify({ id: "msg_test", type: "message", role: "assistant", model: b.model, content: [{ type: "text", text: JSON.stringify(out) }],
+      stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 100, output_tokens: 100 } }), { status: 200, headers: { "content-type": "application/json" } });
   }
   if (u.includes("api.firecrawl.dev")) return new Response(JSON.stringify({ data: { web: [] } }), { status: 200 });
   return real(url, init);

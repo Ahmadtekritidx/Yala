@@ -1,10 +1,10 @@
 # Tests
 
-Browser test of every flow (home, profile, plans, edit, shuffle, share, status) with Google Places and the AI simulated, so it runs without keys.
+Browser test of every flow (home, profile, plans, edit, shuffle, share, status) with Google Places and Claude simulated, so it runs without real keys. The mock fails if any Lovable service is called.
 
 ```bash
 # 1. start the app with the fake Google + AI
-LOVABLE_API_KEY=test GOOGLE_MAPS_API_KEY=test NODE_OPTIONS="--import ./tests/mock.mjs" npx vite dev --port 5173 --host 127.0.0.1
+ANTHROPIC_API_KEY=sk-ant-test GOOGLE_PLACES_API_KEY=g-test NODE_OPTIONS="--import ./tests/mock.mjs" npx vite dev --port 5173 --host 127.0.0.1
 # 2. in another terminal (needs playwright installed)
 node tests/e2e.mjs
 # opening-hours parser
