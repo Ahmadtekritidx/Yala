@@ -161,3 +161,8 @@
   &:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
   &:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 0 var(--foreground); }
 }
+
+@keyframes story {
+  from { width: 0%; }
+  to { width: 100%; }
+}

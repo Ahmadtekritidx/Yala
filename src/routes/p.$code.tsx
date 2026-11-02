@@ -2,6 +2,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
 import { VibeStrip } from "@/components/VibeStrip";
+import { PlanStory } from "@/components/PlanStory";
 import { byId, fmt, driveMins } from "@/lib/places";
 
 export const Route = createFileRoute("/p/$code")({
@@ -56,7 +57,11 @@ function SharedPlan() {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [here, setHere] = useState("");
-  useEffect(() => setHere(window.location.href), []);
+  const [story, setStory] = useState(false);
+  useEffect(() => {
+    setHere(window.location.href);
+    if (new URLSearchParams(window.location.search).get("story") === "1") setStory(true);
+  }, []);
 
   if (!plan) {
     return (
@@ -70,8 +75,10 @@ function SharedPlan() {
   const stopsP = plan.stops.map((s) => byId(s.placeId)).filter(Boolean) as NonNullable<ReturnType<typeof byId>>[];
   const date = nextDate(plan.day).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
-  const share = async () => {
-    const url = window.location.href;
+  const share = async (asStory = false) => {
+    const u = new URL(window.location.href);
+    if (asStory) u.searchParams.set("story", "1"); else u.searchParams.delete("story");
+    const url = u.toString();
     if (navigator.share) { try { await navigator.share({ title: plan.title, text: plan.vibe, url }); return; } catch {} }
     await navigator.clipboard.writeText(url);
     setCopied(true); setTimeout(() => setCopied(false), 2000);
@@ -89,6 +96,12 @@ function SharedPlan() {
       <p className="mt-8 text-sm font-bold uppercase tracking-widest text-secondary">{date}</p>
       <h1 className="mt-2 font-display text-4xl font-bold leading-tight">{plan.title}</h1>
       <p className="mt-2 text-lg text-muted-foreground">{plan.vibe}</p>
+
+      <button onClick={() => setStory(true)}
+        className="mt-6 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl pop press bg-primary font-display text-lg font-extrabold text-primary-foreground">
+        ▶ Watch the day
+      </button>
+      {story && <PlanStory plan={plan} onClose={() => setStory(false)} onShare={() => void share(true)} />}
 
       <ol className="relative mt-10 space-y-8 border-l-2 border-dashed border-primary/40 pl-6">
         {plan.stops.map((s, i) => {
@@ -125,7 +138,7 @@ function SharedPlan() {
         Open full route in Maps
       </a>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button onClick={share} className="min-h-12 rounded-2xl pop press bg-primary font-bold text-primary-foreground">{copied ? "Link copied ✓" : "Share"}</button>
+        <button onClick={() => void share()} className="min-h-12 rounded-2xl pop press bg-primary font-bold text-primary-foreground">{copied ? "Link copied ✓" : "Share"}</button>
         <a href={`https://wa.me/?text=${encodeURIComponent(`${plan.title} — ${plan.vibe}\n`)}${encodeURIComponent(here)}`} target="_blank" rel="noreferrer"
           className="flex min-h-12 items-center justify-center rounded-2xl pop press bg-card font-bold">WhatsApp</a>
         <a href={gcal(plan.title, plan.vibe, plan.day, plan.stops)} target="_blank" rel="noreferrer"
