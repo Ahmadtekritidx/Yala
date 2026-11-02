@@ -1,4 +1,5 @@
 import { DUR, type Category, type Place } from "./places";
+import type { City } from "./city";
 
 // Google Places API (New), called directly with our own key
 const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
@@ -29,24 +30,37 @@ type G = {
   regularOpeningHours?: { weekdayDescriptions?: string[] }; editorialSummary?: { text: string }; businessStatus?: string;
 };
 
+// Outside Lebanon the Lebanese-specific words would only confuse Google.
+const Q_WORLD: Partial<Record<Category, string>> = {
+  Breakfast: "best breakfast",
+  Lunch: "best local restaurant",
+  Walk: "old town historic walk",
+};
+const DAY_IDX: Record<string, number> = { Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6 };
+
 const MEALS = new Set<Category>(["Breakfast", "Brunch", "Lunch", "Dinner"]);
 // Food words we pass straight to Google so "Italian lunch" searches Italian places
 const CUISINES = ["italian", "pizza", "sushi", "japanese", "chinese", "asian", "thai", "indian", "mexican", "burger", "steak", "seafood", "fish", "armenian", "french", "greek", "mediterranean", "manakish", "shawarma", "falafel", "grill", "vegan", "vegetarian"];
 export const cuisineOf = (text: string) => CUISINES.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) ?? "";
 
-async function search(cat: Category, area: string, day: string, stayType: string, gkey: string, diet = "", cuisine = ""): Promise<Place[]> {
-  const meal = cat === "Lunch" || cat === "Dinner" ? (cuisine ? `${cuisine} restaurant` : Q[cat]) : Q[cat];
-  const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${area}, Lebanon`;
+async function search(cat: Category, area: string, day: string, stayType: string, gkey: string, diet = "", cuisine = "", geo?: City): Promise<Place[]> {
+  const q = (geo && Q_WORLD[cat]) || Q[cat];
+  const meal = cat === "Lunch" || cat === "Dinner" ? (cuisine ? `${cuisine} restaurant` : q) : q;
+  const where = geo ? (geo.name === geo.country ? geo.country : `${area}, ${geo.country}`) : `${area}, Lebanon`;
+  const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${where}`;
   const hit = cache.get(text + day);
   if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.v;
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
-    body: JSON.stringify({ textQuery: text, pageSize: 7, regionCode: "LB", languageCode: "en" }),
+    body: JSON.stringify({
+      textQuery: text, pageSize: geo ? 10 : 7, regionCode: geo?.cc ?? "LB", languageCode: "en",
+      ...(geo && geo.name !== geo.country ? { locationBias: { circle: { center: { latitude: geo.lat, longitude: geo.lng }, radius: 30000 } } } : {}),
+    }),
   });
   if (!res.ok) { lastError = `${res.status} ${(await res.text()).slice(0, 200)}`; console.error("places", lastError); return []; }
   const json = (await res.json()) as { places?: G[] };
-  const dayIdx = day === "Sunday" ? 6 : 5; // Google lists Monday first
+  const dayIdx = DAY_IDX[day] ?? 5; // Google lists Monday first
   const outdoors = cat === "Hike" || cat === "Scenic stop" || cat === "Sea view" || cat === "Walk";
   const v = (json.places ?? [])
     .filter((p) => p.location && p.displayName && (p.businessStatus ?? "OPERATIONAL") === "OPERATIONAL" && (p.userRatingCount ?? 0) >= (outdoors ? 5 : 25) && (p.rating ?? 0) >= 4)
@@ -72,13 +86,13 @@ async function search(cat: Category, area: string, day: string, stayType: string
   return v;
 }
 
-export async function livePlaces(opts: { areas: string[]; cats: Category[]; day: string; stay: string; prefs?: string[]; q?: string }) {
+export async function livePlaces(opts: { areas: string[]; cats: Category[]; day: string; stay: string; prefs?: string[]; q?: string; geo?: City | undefined }) {
   const gkey = googleKey();
   if (!gkey) return [];
   const stayType = opts.stay === "Surprise me" || opts.stay === "No" ? "guesthouse or boutique hotel" : opts.stay.toLowerCase();
   const areas = opts.areas.slice(0, 3);
   const diet = (opts.prefs ?? []).find((p) => /^(vegan|vegetarian|halal|gluten free)$/i.test(p))?.toLowerCase() ?? "";
-  const jobs = areas.flatMap((a) => opts.cats.map((c) => search(c, a, opts.day, stayType, gkey, diet, cuisineOf(opts.q ?? "")).catch(() => [] as Place[])));
+  const jobs = areas.flatMap((a) => opts.cats.map((c) => search(c, a, opts.day, stayType, gkey, diet, cuisineOf(opts.q ?? ""), opts.geo).catch(() => [] as Place[])));
   const seen = new Set<string>();
   return (await Promise.all(jobs.slice(0, 18))).flat().filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
 }
@@ -96,7 +110,7 @@ export async function findInstas(places: Place[]) {
       const res = await fetch("https://api.firecrawl.dev/v2/search", {
         method: "POST", signal: ctl.signal,
         headers: { Authorization: `Bearer ${fc}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: `site:instagram.com ${p.name} ${p.area} Lebanon`, limit: 4 }),
+        body: JSON.stringify({ query: `site:instagram.com ${p.name} ${p.area}`, limit: 4 }),
       });
       clearTimeout(t);
       if (!res.ok) return;
@@ -125,13 +139,16 @@ export async function placesStatus() {
 }
 
 // Look up one named place (e.g. pulled from a reel caption) on Google Places.
-export async function findPlace(name: string, area: string, cat: Category): Promise<Place | null> {
+export async function findPlace(name: string, area: string, cat: Category, near?: City): Promise<Place | null> {
   const gkey = googleKey();
   if (!gkey) return null;
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
-    body: JSON.stringify({ textQuery: `${name}${area ? ` ${area}` : ""}, Lebanon`, pageSize: 1, regionCode: "LB", languageCode: "en" }),
+    body: JSON.stringify({
+      textQuery: `${name}${area ? ` ${area}` : ""}`, pageSize: 1, languageCode: "en",
+      ...(near ? { locationBias: { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: 50000 } } } : {}),
+    }),
   });
   if (!res.ok) { console.error("findPlace", res.status); return null; }
   const p = ((await res.json()) as { places?: G[] }).places?.[0];
@@ -140,7 +157,7 @@ export async function findPlace(name: string, area: string, cat: Category): Prom
   return {
     id: "g_" + p.id,
     name: p.displayName.text,
-    area: area || (p.formattedAddress?.split(",").at(-2)?.trim() ?? "Lebanon"),
+    area: area || (p.formattedAddress?.split(",").at(-2)?.trim() ?? ""),
     cat,
     rating: p.rating ?? 4.3,
     reviews: p.userRatingCount,
@@ -154,4 +171,39 @@ export async function findPlace(name: string, area: string, cat: Category): Prom
     insta: p.websiteUri?.includes("instagram.com") ? p.websiteUri : undefined,
     live: true,
   };
+}
+
+// City lookups for the "Where" picker (Google Places, our own key).
+type GC = { displayName?: { text: string }; location?: { latitude: number; longitude: number }; addressComponents?: { longText: string; shortText: string; types: string[] }[] };
+const CITY_MASK = "places.displayName,places.location,places.addressComponents";
+const toCity = (p: GC): City | null => {
+  const c = p.addressComponents?.find((a) => a.types.includes("country"));
+  if (!p.displayName || !p.location || !c) return null;
+  return { name: p.displayName.text, country: c.longText, cc: c.shortText, lat: p.location.latitude, lng: p.location.longitude };
+};
+
+export async function searchCityList(q: string): Promise<City[]> {
+  const gkey = googleKey();
+  if (!gkey || !q.trim()) return [];
+  const res = await fetch(PLACES_URL, {
+    method: "POST",
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": CITY_MASK },
+    body: JSON.stringify({ textQuery: q, includedType: "locality", pageSize: 5, languageCode: "en" }),
+  });
+  if (!res.ok) { console.error("cities", res.status, (await res.text()).slice(0, 200)); return []; }
+  return (((await res.json()) as { places?: GC[] }).places ?? []).map(toCity).filter((c): c is City => !!c);
+}
+
+export async function cityNear(lat: number, lng: number): Promise<City | null> {
+  const gkey = googleKey();
+  if (!gkey) return null;
+  const res = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+    method: "POST",
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": CITY_MASK },
+    body: JSON.stringify({ includedTypes: ["locality"], maxResultCount: 1, rankPreference: "DISTANCE", languageCode: "en",
+      locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 50000 } } }),
+  });
+  if (!res.ok) { console.error("cityNear", res.status, (await res.text()).slice(0, 200)); return null; }
+  const p = ((await res.json()) as { places?: GC[] }).places?.[0];
+  return p ? toCity(p) : null;
 }

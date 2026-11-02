@@ -7,6 +7,7 @@ import { generatePlans, type Plan, type Stop } from "@/lib/plans.functions";
 import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category, type Place } from "@/lib/places";
 import { openAt } from "@/lib/hours";
 import { VibeStrip } from "@/components/VibeStrip";
+import { decodeCity, isLebanon } from "@/lib/city";
 import { loadSaved, type Saved } from "@/lib/saved";
 
 const Search = z.object({
@@ -24,6 +25,7 @@ const Search = z.object({
   budget: z.coerce.string().optional().default("0"),
   drive: z.coerce.string().optional().default("30"),
   saved: z.string().optional().default(""),
+  city: z.string().optional().default(""),
 });
 
 // Keep the last result per request in this tab, so "Edit plan" and back navigation
@@ -85,7 +87,7 @@ function PlansPage() {
     if (hit) { registerPlaces(hit.places); setPlans(hit.plans); return; }
     const savedInput = s.saved === "1" ? saves.slice(0, 15).map((x) => ({ ...x.place, hours: undefined, isNew: undefined, dish: x.dish })) : [];
     const iv = setInterval(() => setMsg((m) => (m + 1) % LOADING.length), 1400);
-    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30, saved: savedInput } })
+    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30, saved: savedInput, ...(() => { const c = decodeCity(s.city); return c && !isLebanon(c) ? { city: c } : {}; })() } })
       .then((r) => { if ("error" in r && r.error) return setError(r.error); if (r.places) registerPlaces(r.places); setPlans(r.plans!); })
       .catch(() => setError("Something broke on our side. Try again?"))
       .finally(() => clearInterval(iv));

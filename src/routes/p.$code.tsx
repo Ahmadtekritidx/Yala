@@ -30,13 +30,15 @@ function ics(title: string, day: string, stops: { placeId: string; time: number 
   };
   const ev = stops.map((s, i) => {
     const pl = byId(s.placeId)!;
-    return `BEGIN:VEVENT\nUID:yalla-${Date.now()}-${i}\nDTSTAMP:${f(0)}\nDTSTART:${f(s.time)}\nDTEND:${f(s.time + pl.mins)}\nSUMMARY:${pl.name} (${title})\nLOCATION:${pl.name}, ${pl.area}, Lebanon\nEND:VEVENT`;
+    return `BEGIN:VEVENT\nUID:yalla-${Date.now()}-${i}\nDTSTAMP:${f(0)}\nDTSTART:${f(s.time)}\nDTEND:${f(s.time + pl.mins)}\nSUMMARY:${pl.name} (${title})\nLOCATION:${pl.name}, ${pl.area}\nEND:VEVENT`;
   });
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Yalla//EN\r\n${ev.join("\r\n")}\r\nEND:VCALENDAR`.replace(/\n(?!\r)/g, "\r\n").replace(/\r\r/g, "\r");
 }
 
-const gq = (name: string, area: string) => encodeURIComponent(`${name}, ${area}, Lebanon`);
-const mapsPlace = (name: string, area: string) => `https://www.google.com/maps/search/?api=1&query=${gq(name, area)}`;
+// Hand-picked places are all in Lebanon; live Google places carry their own city.
+type Loc = { name: string; area: string; live?: boolean | undefined };
+const gq = (p: Loc) => encodeURIComponent(`${p.name}, ${p.area}${p.live ? "" : ", Lebanon"}`);
+const mapsPlace = (p: Loc) => `https://www.google.com/maps/search/?api=1&query=${gq(p)}`;
 const insta = (name: string) => `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(name)}`;
 
 function gcal(title: string, vibe: string, day: string, stops: { placeId: string; time: number }[]) {
@@ -49,7 +51,7 @@ function gcal(title: string, vibe: string, day: string, stops: { placeId: string
   const end = last.time + (lp.cat === "Stay" ? 60 : lp.mins);
   const details = stops.map((s) => { const p = byId(s.placeId)!; return `${fmt(s.time)} · ${p.name} (${p.area})`; }).join("\n") + `\n\n${vibe}`;
   const first = byId(stops[0]!.placeId)!;
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("yalla: " + title)}&dates=${f(stops[0]!.time)}/${f(end)}&ctz=Asia/Beirut&details=${encodeURIComponent(details)}&location=${gq(first.name, first.area)}`;
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("yalla: " + title)}&dates=${f(stops[0]!.time)}/${f(end)}&details=${encodeURIComponent(details)}&location=${gq(first)}`;
 }
 
 function SharedPlan() {
@@ -110,7 +112,7 @@ function SharedPlan() {
           const pl = byId(s.placeId);
           if (!pl) return null;
           const prev = i > 0 ? byId(plan.stops[i - 1]!.placeId) : undefined;
-          const q = encodeURIComponent(`${pl.name}, ${pl.area}, Lebanon`);
+          const q = gq(pl);
           return (
             <li key={i} className="relative">
               <span className="absolute -left-[33px] top-1 h-4 w-4 rounded-full border-4 border-background bg-primary" />
@@ -126,7 +128,7 @@ function SharedPlan() {
                 <a href={pl.insta ?? insta(pl.name)} target="_blank" rel="noreferrer"
                   className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium hover:border-primary">{pl.insta ? "Insta ↗" : "Find on Insta ↗"}</a>
                 {pl.web && !pl.web.includes("instagram.com") && <a href={pl.web} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Site</a>}
-                <a href={pl.maps ?? mapsPlace(pl.name, pl.area)} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Reviews</a>
+                <a href={pl.maps ?? mapsPlace(pl)} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Reviews</a>
               </div>
               <VibeStrip place={pl} />
             </li>
@@ -134,7 +136,7 @@ function SharedPlan() {
         })}
       </ol>
 
-      <a href={`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${gq(stopsP.at(-1)!.name, stopsP.at(-1)!.area)}&waypoints=${stopsP.slice(0, -1).map((p) => gq(p.name, p.area)).join("%7C")}`}
+      <a href={`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${gq(stopsP.at(-1)!)}&waypoints=${stopsP.slice(0, -1).map((p) => gq(p)).join("%7C")}`}
         target="_blank" rel="noreferrer"
         className="mt-12 flex min-h-14 items-center justify-center rounded-2xl pop press bg-accent font-display text-lg font-extrabold text-accent-foreground">
         Open full route in Maps

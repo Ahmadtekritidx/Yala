@@ -64,7 +64,11 @@ export type ReelResult =
 
 export const readReel = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({ url: z.string().url().max(500), hint: z.string().max(120).default("") }).parse(d),
+    z.object({
+      url: z.string().url().max(500),
+      hint: z.string().max(120).default(""),
+      city: z.object({ name: z.string().max(80), country: z.string().max(80), cc: z.string().length(2), lat: z.number(), lng: z.number() }).optional(),
+    }).parse(d),
   )
   .handler(async ({ data }): Promise<ReelResult> => {
     if (!aiConfigured()) return { error: "AI not configured" };
@@ -93,7 +97,7 @@ export const readReel = createServerFn({ method: "POST" })
     const known = allPlaces()
       .filter((p) => p.cat !== "Stay")
       .map((p) => ({ id: p.id, name: p.name, area: p.area }));
-    const ai = await askJSON(`You find the ONE real place in Lebanon that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`, `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`, Out, "low");
+    const ai = await askJSON(`You find the ONE real place (anywhere in the world; the user is planning around ${data.city ? `${data.city.name}, ${data.city.country}` : "Lebanon"}) that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town or city, plus country if it is not obvious. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`, `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`, Out, "low");
     if (!ai.ok) {
       console.error("readReel", ai.kind, ai.error);
       return { error: "Couldn't find a place in this post. Add the name and try again." };
@@ -108,7 +112,7 @@ export const readReel = createServerFn({ method: "POST" })
     const cat = (CATEGORIES as string[]).includes(out.category ?? "")
       ? (out.category as Category)
       : "Lunch";
-    const found = await findPlace(out.name, out.area ?? "", cat).catch(() => null);
+    const found = await findPlace(out.name, out.area ?? "", cat, data.city).catch(() => null);
     if (!found) return { error: `Found "${out.name}" but couldn't locate it on Maps.` };
     return { place: found, url, dish };
   });

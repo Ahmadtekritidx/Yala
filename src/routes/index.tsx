@@ -4,12 +4,14 @@ import { encodePlan } from "@/lib/share";
 import { toMin } from "@/lib/places";
 import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/profile";
 import { SavedReels } from "@/components/SavedReels";
+import { CityPicker } from "@/components/CityPicker";
+import { encodeCity, isLebanon, LEBANON, loadCity, saveCity, weekendDays, type City } from "@/lib/city";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Yalla — what are we doing this weekend?" },
-      { name: "description", content: "Say what you feel like, tap once, get 3 ready weekend plans in Lebanon." },
+      { name: "description", content: "Say what you feel like, tap once, get 3 ready weekend plans in your city." },
       { property: "og:title", content: "Yalla — what are we doing this weekend?" },
       { property: "og:description", content: "One input, one tap, three weekend plans." },
       { property: "og:type", content: "website" },
@@ -21,7 +23,6 @@ export const Route = createFileRoute("/")({
 
 const WHAT = ["Brunch", "Lunch", "Dinner", "Coffee", "Dessert", "Something new"];
 const WHERE = ["Beirut", "Batroun", "Jbeil", "Tripoli", "Broummana", "Jounieh", "Anywhere within 45 min"];
-const DAYS = ["Saturday", "Sunday"];
 const QUICK = [
   { label: "Sunday hike", q: "Morning hike then a village lunch", day: "Sunday", time: "08:00" },
   { label: "Douma road trip", q: "Breakfast in Douma then a mountain road trip", day: "Sunday", time: "08:30" },
@@ -76,6 +77,9 @@ function Home() {
   const [end, setEnd] = useState("18:00");
   const [recent, setRecent] = useState<Recent[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [city, setCity] = useState<City>(LEBANON);
+  const leb = isLebanon(city);
+  const DAYS = weekendDays(city);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -83,6 +87,9 @@ function Home() {
       setRecent(JSON.parse(localStorage.getItem("yalla:recent") || "[]"));
       const pr = loadProfile();
       setProfile(pr);
+      const c = loadCity();
+      setCity(c);
+      if (!isLebanon(c)) { setDay(weekendDays(c)[0]); return; }
       const last = localStorage.getItem("yalla:lastArea") || pr?.homeArea;
       if (last) setWhere([last]);
     } catch {}
@@ -91,11 +98,18 @@ function Home() {
   const toggle = (list: string[], set: (v: string[]) => void, v: string) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
-  const ready = text.trim().length > 0 || what.length > 0 || where.length > 0;
+  const changeCity = (c: City) => {
+    setCity(c); saveCity(c);
+    setWhere([]);
+    if (!weekendDays(c).includes(day)) setDay(weekendDays(c)[0]);
+  };
+  const cityParam = leb ? {} : { city: encodeCity(city) };
+
+  const ready = text.trim().length > 0 || what.length > 0 || where.length > 0 || !leb;
 
   const go = () => {
     if (where[0]) localStorage.setItem("yalla:lastArea", where[0]);
-    navigate({ to: "/plans", search: { q: text.trim(), what: what.join(","), where: where.join(","), day, time, end, ...profileSearch(profile) } });
+    navigate({ to: "/plans", search: { q: text.trim(), what: what.join(","), where: where.join(","), day, time, end, ...profileSearch(profile), ...cityParam } });
   };
 
   return (
@@ -116,11 +130,11 @@ function Home() {
       </Link>
 
       <div className="mt-6 flex flex-wrap gap-2">
-        {QUICK.map((x) => (
+        {QUICK.filter((x) => leb || !/douma/i.test(x.label)).map((x) => (
           <button key={x.label} type="button"
-            onClick={() => navigate({ to: "/plans", search: { q: x.q, what: "", where: where.join(","), day: "day" in x ? x.day! : day, time: "time" in x ? x.time! : time, end, ...profileSearch(profile) } })}
+            onClick={() => navigate({ to: "/plans", search: { q: x.q, what: "", where: where.join(","), day: "day" in x ? (leb ? x.day! : DAYS[1]) : day, time: "time" in x ? x.time! : time, end, ...profileSearch(profile), ...cityParam } })}
             className="min-h-11 shrink-0 rounded-full pop press bg-accent text-accent-foreground px-4 text-sm font-bold">
-            {x.label}
+            {leb ? x.label : x.label.replace("Sunday", DAYS[1])}
           </button>
         ))}
       </div>
@@ -129,7 +143,8 @@ function Home() {
         {WHAT.map((c) => <Chip key={c} label={c} on={what.includes(c)} onClick={() => toggle(what, setWhat, c)} />)}
       </Row>
       <Row title="Where">
-        {WHERE.map((c) => <Chip key={c} label={c} on={where.includes(c)} onClick={() => toggle(where, setWhere, c)} />)}
+        <CityPicker city={city} onChange={changeCity} />
+        {leb && WHERE.map((c) => <Chip key={c} label={c} on={where.includes(c)} onClick={() => toggle(where, setWhere, c)} />)}
       </Row>
       <Row title="When">
         {DAYS.map((d) => <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />)}
@@ -161,12 +176,12 @@ function Home() {
         Give me 3 plans
       </button>
 
-      <SavedReels onPlan={() => navigate({ to: "/plans", search: { q: text.trim() || "Build it around my saved places", what: what.join(","), where: where.join(","), day, time, end, saved: "1" } })} />
+      <SavedReels onPlan={() => navigate({ to: "/plans", search: { q: text.trim() || "Build it around my saved places", what: what.join(","), where: where.join(","), day, time, end, saved: "1", ...cityParam } })} />
 
       <section className="mt-16">
         <h2 className="font-display text-xl font-bold">Plans people loved</h2>
         <div className="mt-3 grid gap-3">
-          {LOVED.map((l) => (
+          {(leb ? LOVED : []).map((l) => (
             <button key={l.title} type="button"
               onClick={() => { const code = encodePlan({ title: l.title, vibe: l.vibe, day: l.day, stops: l.stops }); navigate({ to: "/p/$code", params: { code } }); }}
               className="rounded-2xl pop press bg-card p-4 text-left transition hover:border-primary">

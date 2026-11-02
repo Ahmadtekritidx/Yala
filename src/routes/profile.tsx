@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { CityPicker } from "@/components/CityPicker";
+import { isLebanon, LEBANON, loadCity, saveCity, type City } from "@/lib/city";
 import { AREAS, AVOIDS, DIETS, EMPTY, LIKES, STAYS, loadProfile, saveProfile, type Profile } from "@/lib/profile";
 
 export const Route = createFileRoute("/profile")({
@@ -42,7 +44,8 @@ function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => { const x = loadProfile(); if (x) setP(x); }, []);
+  const [city, setCity] = useState<City>(LEBANON);
+  useEffect(() => { const x = loadProfile(); if (x) setP(x); setCity(loadCity()); }, []);
 
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => { setP((o) => ({ ...o, [k]: v })); setSaved(false); };
   const toggle = (k: "diet" | "likes" | "avoid", v: string) =>
@@ -50,6 +53,7 @@ function ProfilePage() {
 
   const save = () => {
     saveProfile(p);
+    saveCity(city);
     if (p.homeArea) localStorage.setItem("yalla:lastArea", p.homeArea);
     setSaved(true);
     setTimeout(() => navigate({ to: "/" }), 600);
@@ -70,8 +74,9 @@ function ProfilePage() {
           className="mt-3 min-h-12 w-full rounded-2xl pop bg-card px-4 text-base outline-none focus:ring-2 focus:ring-ring/30" />
       </section>
 
-      <Section title="Home area" hint="We start from here when you don't pick a place.">
-        {AREAS.map((a) => <Chip key={a} label={a} on={p.homeArea === a} onClick={() => set("homeArea", p.homeArea === a ? "" : a)} />)}
+      <Section title="Home city" hint="Anywhere in the world. We plan around here by default.">
+        <CityPicker city={city} onChange={(c) => { setCity(c); setSaved(false); if (!isLebanon(c)) set("homeArea", ""); }} />
+        {isLebanon(city) && AREAS.map((a) => <Chip key={a} label={a} on={p.homeArea === a} onClick={() => set("homeArea", p.homeArea === a ? "" : a)} />)}
       </Section>
 
       <Section title="Usually going out as">

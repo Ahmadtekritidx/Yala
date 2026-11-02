@@ -53,7 +53,8 @@ export function decodePlan(code: string): (Shared & { places: Place[] }) | null 
 }
 
 export function nextDate(day: string) {
-  const target = day === "Sunday" ? 0 : 6;
+  const idx = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(day);
+  const target = idx < 0 ? 6 : idx;
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + ((target - d.getDay() + 7) % 7));

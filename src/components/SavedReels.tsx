@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { readReel } from "@/lib/media.functions";
+import { isLebanon, loadCity } from "@/lib/city";
 import { addSaved, loadSaved, removeSaved, type Saved } from "@/lib/saved";
 
 // Paste a reel / TikTok link, we find the place and keep it in "Want to go".
@@ -43,7 +44,7 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
     setBusy(true);
     setMsg("");
     try {
-      const r = await read({ data: { url: u, hint } });
+      const r = await read({ data: { url: u, hint, ...(isLebanon(loadCity()) ? {} : { city: loadCity() }) } });
       if ("error" in r) {
         setMsg(r.error);
         setNeedHint(true);

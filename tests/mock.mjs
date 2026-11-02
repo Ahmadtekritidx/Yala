@@ -1,10 +1,12 @@
 // Test-only: fake Google Places API, the Anthropic API and Firecrawl. Fails loudly if a Lovable service is called.
 const real = globalThis.fetch;
-const CENTER = { Beirut: [33.895, 35.51], Batroun: [34.256, 35.659], Jbeil: [34.121, 35.646], Jounieh: [33.98, 35.62], Tripoli: [34.44, 35.84], Broummana: [33.883, 35.62], Douma: [34.209, 35.841] };
+const CITIES = { Riyadh: { c: [24.7136, 46.6753], country: "Saudi Arabia", cc: "SA" }, Dubai: { c: [25.2048, 55.2708], country: "United Arab Emirates", cc: "AE" } };
+const city = (n) => ({ displayName: { text: n }, location: { latitude: CITIES[n].c[0], longitude: CITIES[n].c[1] }, addressComponents: [{ longText: CITIES[n].country, shortText: CITIES[n].cc, types: ["country", "political"] }] });
+const CENTER = { Riyadh: CITIES.Riyadh.c, Dubai: CITIES.Dubai.c, Beirut: [33.895, 35.51], Batroun: [34.256, 35.659], Jbeil: [34.121, 35.646], Jounieh: [33.98, 35.62], Tripoli: [34.44, 35.84], Broummana: [33.883, 35.62], Douma: [34.209, 35.841] };
 const HOURS = ["8:00 AM – 11:00 PM", "12:00 – 3:30 PM, 7:00 – 11:30 PM", "Open 24 hours", "Closed", "9:00 AM – 2:00 PM", "6:00 PM – 1:00 AM", "10:00 AM – 10:00 PM"];
 globalThis.__log = [];
 function places(q) {
-  const m = q.match(/^(.*) in (.*), Lebanon$/); const [kind, area] = [m[1], m[2]];
+  const m = q.match(/^(.*) in ([^,]*), (.*)$/); const [kind, area] = [m[1], m[2]];
   const c = CENTER[area] ?? CENTER.Beirut; let h = 0; for (const ch of q) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return Array.from({ length: 7 }, (_, i) => ({
     id: `${area}-${kind}-${i}`.replace(/\W+/g, "_"),
@@ -32,7 +34,12 @@ globalThis.fetch = async (url, init = {}) => {
     if (h.get("x-goog-api-key") !== "g-test") return new Response('{"error":{"code":403,"message":"API key not valid"}}', { status: 403 });
     const b = JSON.parse(init.body); 
     if (process.env.MOCK_GOOGLE_FAIL) return new Response('{"error":{"code":403,"message":"API key not valid"}}', { status: 403 });
+    globalThis.__log.push(b);
+    if (b.includedType === "locality") return new Response(JSON.stringify({ places: Object.keys(CITIES).filter((n) => n.toLowerCase().startsWith(b.textQuery.toLowerCase().slice(0, 3))).map(city) }), { status: 200 });
     return new Response(JSON.stringify({ places: places(b.textQuery) }), { status: 200 });
+  }
+  if (u.startsWith("https://places.googleapis.com/v1/places:searchNearby")) {
+    return new Response(JSON.stringify({ places: [city("Riyadh")] }), { status: 200 });
   }
   if (u.startsWith("https://api.anthropic.com/v1/messages")) {
     const h = new Headers(init.headers);
