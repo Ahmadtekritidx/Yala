@@ -166,3 +166,8 @@
   from { width: 0%; }
   to { width: 100%; }
 }
+
+@keyframes kenburns {
+  from { transform: scale(1.35) rotate(-2deg); }
+  to { transform: scale(1) rotate(0deg); }
+}
