@@ -37,7 +37,6 @@ function ics(title: string, day: string, stops: { placeId: string; time: number 
 
 const gq = (name: string, area: string) => encodeURIComponent(`${name}, ${area}, Lebanon`);
 const mapsPlace = (name: string, area: string) => `https://www.google.com/maps/search/?api=1&query=${gq(name, area)}`;
-const insta = (name: string) => `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(name)}`;
 
 function gcal(title: string, vibe: string, day: string, stops: { placeId: string; time: number }[]) {
   const base = nextDate(day);
@@ -123,8 +122,6 @@ function SharedPlan() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <a href={`https://www.google.com/maps/dir/?api=1&destination=${pl.live ? `${pl.lat},${pl.lng}` : q}&travelmode=driving`} target="_blank" rel="noreferrer"
                   className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium hover:border-primary">Directions ↗</a>
-                <a href={pl.insta ?? insta(pl.name)} target="_blank" rel="noreferrer"
-                  className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium hover:border-primary">{pl.insta ? "Insta ↗" : "Find on Insta ↗"}</a>
                 {pl.web && !pl.web.includes("instagram.com") && <a href={pl.web} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Site</a>}
                 <a href={pl.maps ?? mapsPlace(pl.name, pl.area)} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium">Reviews</a>
               </div>

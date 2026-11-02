@@ -45,7 +45,7 @@ export function VibeStrip({ place }: { place: Place }) {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="inline-flex min-h-11 items-center gap-1 rounded-full border border-border px-3 text-sm font-medium hover:border-primary"
+        className="inline-flex min-h-11 items-center gap-1 rounded-full pop press bg-card px-4 text-sm font-medium hover:border-primary"
       >
         ▶ Vibe check{clips.length ? ` · ${clips.length}` : ""}
       </button>
@@ -87,7 +87,7 @@ export function VibeStrip({ place }: { place: Place }) {
             <span className="text-xs text-muted-foreground">
               {clips.length ? "More on" : "Watch on"}
             </span>
-            {searchLinks(place).map((s) => (
+            {[...(place.insta ? [{ label: "Their Insta", href: place.insta }] : []), ...searchLinks(place)].map((s) => (
               <a
                 key={s.label}
                 href={s.href}
