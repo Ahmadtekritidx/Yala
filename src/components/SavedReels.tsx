@@ -35,6 +35,11 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
       setMsg("Paste a TikTok, Instagram or YouTube link");
       return;
     }
+    if (/instagram\.com/.test(u) && !hint.trim()) {
+      setNeedHint(true);
+      setMsg("Instagram hides captions. Type the place name, then Save.");
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {

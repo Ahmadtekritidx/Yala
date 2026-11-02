@@ -24,14 +24,6 @@ export const expandLink = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ url: z.string().url() }).parse(d))
   .handler(async ({ data }) => ({ url: await expand(data.url) }));
 
-const decode = (s: string) =>
-  s
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&#x27;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-
 // Public caption text, no API keys: TikTok and YouTube oEmbed, Instagram page meta tags.
 async function caption(url: string): Promise<string> {
   const host = new URL(url).hostname;
@@ -50,15 +42,7 @@ async function caption(url: string): Promise<string> {
       ).json()) as { title?: string; author_name?: string };
       return `${j.title ?? ""} (by ${j.author_name ?? "?"})`;
     }
-    if (host.includes("instagram.com")) {
-      const html = await (await get(url, "facebookexternalhit/1.1")).text();
-      const meta = [
-        ...html.matchAll(
-          /<meta[^>]+(?:property|name)="(og:title|og:description|description)"[^>]+content="([^"]*)"/g,
-        ),
-      ].map((m) => decode(m[2]!));
-      return meta.join(" | ").slice(0, 1500);
-    }
+    // Instagram: captions need a login, so the user types the place name instead.
   } catch {
     /* best effort */
   }
@@ -98,8 +82,13 @@ export const readReel = createServerFn({ method: "POST" })
 
     const url = await expand(data.url);
     const text = await caption(url);
-    if (!text.trim() && !data.hint.trim())
-      return { error: "Couldn't read this post. Type the place name and try again." };
+    if (!text.trim() && !data.hint.trim()) {
+      return {
+        error: url.includes("instagram.com")
+          ? "Instagram hides captions. Type the place name below."
+          : "Couldn't read this post. Type the place name below.",
+      };
+    }
 
     const known = allPlaces()
       .filter((p) => p.cat !== "Stay")
