@@ -6,6 +6,8 @@ import { z } from "zod";
 import { generatePlans, type Plan, type Stop } from "@/lib/plans.functions";
 import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category, type Place } from "@/lib/places";
 import { openAt } from "@/lib/hours";
+import { VibeStrip } from "@/components/VibeStrip";
+import { loadSaved, type Saved } from "@/lib/saved";
 
 const Search = z.object({
   q: z.coerce.string().optional().default(""),
@@ -21,6 +23,7 @@ const Search = z.object({
   pace: z.enum(["Chill", "Packed"]).optional().default("Chill"),
   budget: z.coerce.string().optional().default("0"),
   drive: z.coerce.string().optional().default("30"),
+  saved: z.string().optional().default(""),
 });
 
 // Keep the last result per request in this tab, so "Edit plan" and back navigation
@@ -66,6 +69,7 @@ function PlansPage() {
   const [adding, setAdding] = useState<number | null>(null);
   const [undo, setUndo] = useState<{ prev: Plan[] } | null>(null);
   const [noAdd, setNoAdd] = useState("");
+  const [mySaves, setMySaves] = useState<Saved[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const label = [s.q, s.what.replaceAll(",", ", "), s.where.replaceAll(",", ", ")].filter(Boolean).join(" · ") || "Surprise me";
@@ -75,10 +79,13 @@ function PlansPage() {
 
   useEffect(() => {
     setPlans(null); setError("");
+    const saves = loadSaved();
+    setMySaves(saves);
     const hit = n === 0 ? readCache(key) : null;
     if (hit) { registerPlaces(hit.places); setPlans(hit.plans); return; }
+    const savedInput = s.saved === "1" ? saves.slice(0, 15).map((x) => ({ ...x.place, hours: undefined, isNew: undefined, dish: x.dish })) : [];
     const iv = setInterval(() => setMsg((m) => (m + 1) % LOADING.length), 1400);
-    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30 } })
+    gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30, saved: savedInput } })
       .then((r) => { if ("error" in r && r.error) return setError(r.error); if (r.places) registerPlaces(r.places); setPlans(r.plans!); })
       .catch(() => setError("Something broke on our side. Try again?"))
       .finally(() => clearInterval(iv));
@@ -171,7 +178,7 @@ function PlansPage() {
                           <p className="w-14 shrink-0 pt-0.5 font-display font-bold text-primary">{fmt(st.time)}</p>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold uppercase tracking-wider text-secondary">{pl.cat}</p>
-                            <p className="font-bold">{pl.name}</p>
+                            <p className="font-bold">{pl.name}{mySaves.some((x) => x.place.id === pl.id) && <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">♥ your save</span>}</p>
                             <p className="text-sm text-muted-foreground">{st.reason}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">{"$".repeat(pl.price)} · ★ {pl.rating}{pl.reviews ? ` (${pl.reviews})` : ""} · {pl.area}{pl.live ? " · live on Google" : ""}</p>
                             {pl.hours && (
@@ -179,6 +186,7 @@ function PlansPage() {
                                 {openAt(pl.hours, st.time, pl.mins) ? `Open ${s.day}: ${pl.hours}` : `Closed at this time (${pl.hours}). Swap it?`}
                               </p>
                             )}
+                            <VibeStrip place={pl} />
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <button aria-label="Swap" onClick={() => setSwap({ p, i })} className="grid h-11 w-11 place-items-center rounded-full border border-border hover:border-primary">⇄</button>

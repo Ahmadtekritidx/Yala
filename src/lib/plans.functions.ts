@@ -5,7 +5,7 @@ import { getRequestHeader } from "@tanstack/react-start/server";
 const LIMIT = 20, WINDOW = 3600e3;
 const hits = new Map<string, number[]>();
 import { z } from "zod";
-import { PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
+import { CATEGORIES, PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
 import { livePlaces, findInstas, placesStatus } from "./live.server";
 import { openAt, closedToday } from "./hours";
 import { aiConfigured, aiStatus, askJSON, PlanOut } from "./ai.server";
@@ -24,6 +24,13 @@ const Input = z.object({
   pace: z.enum(["Chill", "Packed"]).default("Chill"),
   budget: z.number().int().min(0).max(3).default(0),
   maxDrive: z.number().int().min(10).max(90).default(30),
+  saved: z.array(z.object({
+    id: z.string().max(200), name: z.string().max(120), area: z.string().max(60),
+    cat: z.enum(CATEGORIES as [Category, ...Category[]]), rating: z.number(), price: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    reason: z.string().max(200), lat: z.number(), lng: z.number(), mins: z.number(),
+    maps: z.string().max(300).optional(), web: z.string().max(300).optional(), insta: z.string().max(300).optional(),
+    reviews: z.number().optional(), live: z.boolean().optional(), dish: z.string().max(60).optional(),
+  })).max(15).default([]),
 });
 
 const AiOut = z.object({
@@ -55,6 +62,8 @@ export const generatePlans = createServerFn({ method: "POST" })
     const ql = data.q.toLowerCase().replace("jouniye", "jounieh").replace("byblos", "jbeil");
     const mentioned = known.filter((a) => ql.includes(a.toLowerCase()));
     areas = [...new Set([...areas, ...mentioned])];
+    // Saved-from-reels places pull their areas in when the user did not pick any.
+    if (!areas.length && data.saved.length) areas = [...new Set(data.saved.map((p) => p.area).filter((a) => known.includes(a)))];
     if (!areas.length || data.where.includes("Anywhere within 45 min") || data.where.includes("Road trip")) areas = AREAS;
     // Centres of the chosen areas; include every place within ~25 km so small areas still get full plans.
     const centers = areas.map((a) => AREA_CENTER[a] ?? (() => { const ps = PLACES.filter((p) => p.area === a); return ps.length ? [ps.reduce((x, p) => x + p.lat, 0) / ps.length, ps.reduce((x, p) => x + p.lng, 0) / ps.length] as [number, number] : null; })()).filter(Boolean) as [number, number][];
@@ -91,6 +100,9 @@ export const generatePlans = createServerFn({ method: "POST" })
       const cheap = pool.filter((p) => p.price <= data.budget || p.cat === "Stay");
       if (cheap.length >= 8) pool = cheap;
     }
+    const saved: Place[] = data.saved.filter((p) => p.cat !== "Stay").map(({ dish: _d, ...p }) => ({ ...p, live: p.live ?? !PLACES.some((x) => x.id === p.id) }));
+    registerPlaces(saved.filter((p) => p.live));
+    pool = [...saved, ...pool.filter((p) => !saved.some((x) => x.id === p.id))];
     const candidates = pool.map((p) => ({
       id: p.id, name: p.name, area: p.area, category: p.cat, rating: p.rating,
       price: "$".repeat(p.price), note: p.reason, new: !!p.isNew, lat: +p.lat.toFixed(3), lng: +p.lng.toFixed(3), stayMins: p.mins, reviews: p.reviews, hours: p.hours,
@@ -109,7 +121,8 @@ RULES (be the smartest local friend):
 - Everything must fit in the time window, including drives. Drop stops rather than overflow.
 - Never two meals back to back, never two of the same category in a row.
 - For each stop give "time" as "HH:MM" (your suggested arrival).
-Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hike or road trip, one sea) fitting the time window. Road trips may chain nearby areas (e.g. breakfast in Douma then Tannourine hike then lunch). Morning starts suit Breakfast/Hike. Suit the group size (solo = cafes/walks, big group = big tables, grills). Each plan has stops in a sensible order (meal times make sense, sunset spots late afternoon, keep drives short unless it is a road trip). Titles short and playful (e.g. "Batroun slow Sunday"). Vibe is one line like "Pasta, cortado, then sunset". Each stop reason is max 7 words. If "Something new" was asked, prefer new:true places.`;
+Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hike or road trip, one sea) fitting the time window. Road trips may chain nearby areas (e.g. breakfast in Douma then Tannourine hike then lunch). Morning starts suit Breakfast/Hike. Suit the group size (solo = cafes/walks, big group = big tables, grills). Each plan has stops in a sensible order (meal times make sense, sunset spots late afternoon, keep drives short unless it is a road trip). Titles short and playful (e.g. "Batroun slow Sunday"). Vibe is one line like "Pasta, cortado, then sunset". Each stop reason is max 7 words. If "Something new" was asked, prefer new:true places.${saved.length ? `
+SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.map((p) => ({ id: p.id, name: p.name, area: p.area, mustOrder: p.dish })))}. Build plans AROUND them: every plan should include at least one saved place (more when they are close together), still respecting hours, timing and geography. Mention the mustOrder dish in that stop's reason when given.` : ""}`;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await askJSON(

@@ -123,3 +123,35 @@ export async function placesStatus() {
   out.error = lastError || (list.length ? "" : "Google answered but returned no places that pass the filters (rating 4+, 25+ reviews)");
   return out;
 }
+
+// Look up one named place (e.g. pulled from a reel caption) on Google Places.
+export async function findPlace(name: string, area: string, cat: Category): Promise<Place | null> {
+  const gkey = googleKey();
+  if (!gkey) return null;
+  const res = await fetch(PLACES_URL, {
+    method: "POST",
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
+    body: JSON.stringify({ textQuery: `${name}${area ? ` ${area}` : ""}, Lebanon`, pageSize: 1, regionCode: "LB", languageCode: "en" }),
+  });
+  if (!res.ok) { console.error("findPlace", res.status); return null; }
+  const p = ((await res.json()) as { places?: G[] }).places?.[0];
+  if (!p?.location || !p.displayName) return null;
+  const outdoors = cat === "Hike" || cat === "Scenic stop" || cat === "Sea view" || cat === "Walk";
+  return {
+    id: "g_" + p.id,
+    name: p.displayName.text,
+    area: area || (p.formattedAddress?.split(",").at(-2)?.trim() ?? "Lebanon"),
+    cat,
+    rating: p.rating ?? 4.3,
+    reviews: p.userRatingCount,
+    price: PRICE[p.priceLevel ?? ""] ?? (outdoors ? 1 : 2),
+    reason: (p.editorialSummary?.text ?? "").slice(0, 90),
+    lat: p.location.latitude,
+    lng: p.location.longitude,
+    mins: DUR[cat],
+    maps: p.googleMapsUri,
+    web: p.websiteUri,
+    insta: p.websiteUri?.includes("instagram.com") ? p.websiteUri : undefined,
+    live: true,
+  };
+}
