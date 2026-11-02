@@ -1,8 +1,11 @@
 import { DUR, type Category, type Place } from "./places";
 
-const GW = "https://connector-gateway.lovable.dev/google_maps";
+// Google Places API (New), called directly with our own key
+const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
+const googleKey = () => process.env["GOOGLE_PLACES_API_KEY"];
 const cache = new Map<string, { at: number; v: Place[] }>();
 const igCache = new Map<string, string | null>();
+let lastError = "";
 
 const Q: Record<Category, string> = {
   Breakfast: "best breakfast manakish saj",
@@ -26,16 +29,22 @@ type G = {
   regularOpeningHours?: { weekdayDescriptions?: string[] }; editorialSummary?: { text: string }; businessStatus?: string;
 };
 
-async function search(cat: Category, area: string, day: string, stayType: string, key: string, gkey: string): Promise<Place[]> {
-  const text = `${cat === "Stay" ? stayType : Q[cat]} in ${area}, Lebanon`;
+const MEALS = new Set<Category>(["Breakfast", "Brunch", "Lunch", "Dinner"]);
+// Food words we pass straight to Google so "Italian lunch" searches Italian places
+const CUISINES = ["italian", "pizza", "sushi", "japanese", "chinese", "asian", "thai", "indian", "mexican", "burger", "steak", "seafood", "fish", "armenian", "french", "greek", "mediterranean", "manakish", "shawarma", "falafel", "grill", "vegan", "vegetarian"];
+export const cuisineOf = (text: string) => CUISINES.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) ?? "";
+
+async function search(cat: Category, area: string, day: string, stayType: string, gkey: string, diet = "", cuisine = ""): Promise<Place[]> {
+  const meal = cat === "Lunch" || cat === "Dinner" ? (cuisine ? `${cuisine} restaurant` : Q[cat]) : Q[cat];
+  const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${area}, Lebanon`;
   const hit = cache.get(text + day);
   if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.v;
-  const res = await fetch(`${GW}/places/v1/places:searchText`, {
+  const res = await fetch(PLACES_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "X-Connection-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
     body: JSON.stringify({ textQuery: text, pageSize: 7, regionCode: "LB", languageCode: "en" }),
   });
-  if (!res.ok) { console.error("places", res.status, (await res.text()).slice(0, 300)); return []; }
+  if (!res.ok) { lastError = `${res.status} ${(await res.text()).slice(0, 200)}`; console.error("places", lastError); return []; }
   const json = (await res.json()) as { places?: G[] };
   const dayIdx = day === "Sunday" ? 6 : 5; // Google lists Monday first
   const outdoors = cat === "Hike" || cat === "Scenic stop" || cat === "Sea view" || cat === "Walk";
@@ -46,7 +55,7 @@ async function search(cat: Category, area: string, day: string, stayType: string
       name: p.displayName!.text,
       area,
       cat,
-      rating: p.rating ?? 4.3,
+      rating: Math.round((p.rating ?? 4.3) * 10) / 10,
       reviews: p.userRatingCount,
       price: PRICE[p.priceLevel ?? ""] ?? (outdoors ? 1 : 2),
       reason: (p.editorialSummary?.text ?? "").slice(0, 90),
@@ -63,12 +72,13 @@ async function search(cat: Category, area: string, day: string, stayType: string
   return v;
 }
 
-export async function livePlaces(opts: { areas: string[]; cats: Category[]; day: string; stay: string }) {
-  const key = process.env["LOVABLE_API_KEY"], gkey = process.env["GOOGLE_MAPS_API_KEY"];
-  if (!key || !gkey) return [];
+export async function livePlaces(opts: { areas: string[]; cats: Category[]; day: string; stay: string; prefs?: string[]; q?: string }) {
+  const gkey = googleKey();
+  if (!gkey) return [];
   const stayType = opts.stay === "Surprise me" || opts.stay === "No" ? "guesthouse or boutique hotel" : opts.stay.toLowerCase();
   const areas = opts.areas.slice(0, 3);
-  const jobs = areas.flatMap((a) => opts.cats.map((c) => search(c, a, opts.day, stayType, key, gkey).catch(() => [] as Place[])));
+  const diet = (opts.prefs ?? []).find((p) => /^(vegan|vegetarian|halal|gluten free)$/i.test(p))?.toLowerCase() ?? "";
+  const jobs = areas.flatMap((a) => opts.cats.map((c) => search(c, a, opts.day, stayType, gkey, diet, cuisineOf(opts.q ?? "")).catch(() => [] as Place[])));
   const seen = new Set<string>();
   return (await Promise.all(jobs.slice(0, 18))).flat().filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
 }
@@ -99,13 +109,28 @@ export async function findInstas(places: Place[]) {
   }));
 }
 
+// One live test search, for the /status page. Never returns keys.
+export async function placesStatus() {
+  const gkey = googleKey();
+  const out = { googleKey: !!gkey, firecrawlKey: !!process.env["FIRECRAWL_API_KEY"], ok: false, count: 0, sample: [] as { name: string; rating: number; reviews?: number | undefined; hours?: string | undefined }[], error: "" };
+  if (!gkey) { out.error = "Missing secret: GOOGLE_PLACES_API_KEY"; return out; }
+  lastError = "";
+  cache.delete("specialty coffee shop in Beirut, Lebanon" + "Saturday");
+  const list = await search("Specialty coffee", "Beirut", "Saturday", "", gkey).catch((e) => { lastError = String(e); return [] as Place[]; });
+  out.count = list.length;
+  out.ok = list.length > 0;
+  out.sample = list.slice(0, 3).map((p) => ({ name: p.name, rating: p.rating, reviews: p.reviews, hours: p.hours }));
+  out.error = lastError || (list.length ? "" : "Google answered but returned no places that pass the filters (rating 4+, 25+ reviews)");
+  return out;
+}
+
 // Look up one named place (e.g. pulled from a reel caption) on Google Places.
 export async function findPlace(name: string, area: string, cat: Category): Promise<Place | null> {
-  const key = process.env["LOVABLE_API_KEY"], gkey = process.env["GOOGLE_MAPS_API_KEY"];
-  if (!key || !gkey) return null;
-  const res = await fetch(`${GW}/places/v1/places:searchText`, {
+  const gkey = googleKey();
+  if (!gkey) return null;
+  const res = await fetch(PLACES_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "X-Connection-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
+    headers: { "X-Goog-Api-Key": gkey, "Content-Type": "application/json", "X-Goog-FieldMask": MASK },
     body: JSON.stringify({ textQuery: `${name}${area ? ` ${area}` : ""}, Lebanon`, pageSize: 1, regionCode: "LB", languageCode: "en" }),
   });
   if (!res.ok) { console.error("findPlace", res.status); return null; }

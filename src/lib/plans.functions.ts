@@ -1,12 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
-// Simple per-person limit: 1 plan request per hour per visitor (by IP).
-const LIMIT = 1, WINDOW = 3600e3;
+// Per-visitor limit (by IP): enough for shuffles and retries, a wall for scripts.
+const LIMIT = 20, WINDOW = 3600e3;
 const hits = new Map<string, number[]>();
 import { z } from "zod";
 import { CATEGORIES, PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
-import { livePlaces, findInstas } from "./live.server";
+import { livePlaces, findInstas, placesStatus } from "./live.server";
+import { openAt, closedToday } from "./hours";
+import { aiConfigured, aiStatus, askJSON, PlanOut } from "./ai.server";
 
 const Input = z.object({
   q: z.string().max(300).default(""),
@@ -20,6 +22,8 @@ const Input = z.object({
   prefs: z.array(z.string().max(30)).max(12).default([]),
   stay: z.string().max(20).default("No"),
   pace: z.enum(["Chill", "Packed"]).default("Chill"),
+  budget: z.number().int().min(0).max(3).default(0),
+  maxDrive: z.number().int().min(10).max(90).default(30),
   saved: z.array(z.object({
     id: z.string().max(200), name: z.string().max(120), area: z.string().max(60),
     cat: z.enum(CATEGORIES as [Category, ...Category[]]), rating: z.number(), price: z.union([z.literal(1), z.literal(2), z.literal(3)]),
@@ -43,14 +47,13 @@ export type Plan = { title: string; vibe: string; stops: Stop[] };
 export const generatePlans = createServerFn({ method: "POST" })
   .inputValidator((d) => Input.parse(d))
   .handler(async ({ data }) => {
-    const key = process.env["LOVABLE_API_KEY"];
-    if (!key) throw new Error("AI not configured");
+    if (!aiConfigured()) return { error: "The planner isn't switched on yet (missing AI key)." };
     const ip = (getRequestHeader("cf-connecting-ip") || getRequestHeader("x-forwarded-for")?.split(",")[0] || "anon").trim();
     const now = Date.now();
     const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW);
     if (recent.length >= LIMIT) {
       const mins = Math.ceil((WINDOW - (now - recent[0]!)) / 60000);
-      return { error: `Easy habibi, one plan per hour. Try again in ${mins} min.` };
+      return { error: `Easy habibi, that's a lot of plans. Try again in ${mins} min.` };
     }
     recent.push(now); hits.set(ip, recent);
     if (hits.size > 5000) hits.clear();
@@ -87,10 +90,16 @@ export const generatePlans = createServerFn({ method: "POST" })
     const liveAreas = areas.length === AREAS.length ? (roadTrip ? ["Batroun", "Douma", "Jbeil"] : ["Beirut", "Batroun"]) : areas;
     const avoidCats = new Set(data.avoid.map((a) => a.toLowerCase()));
     let live: Place[] = [];
-    try { live = (await livePlaces({ areas: liveAreas, cats: [...cats].filter((c) => !avoidCats.has(c.toLowerCase())).slice(0, 7), day: data.day, stay: data.stay })); } catch (e) { console.error("live", e); }
+    try { live = (await livePlaces({ areas: liveAreas, cats: [...cats].filter((c) => !avoidCats.has(c.toLowerCase())).slice(0, 7), day: data.day, stay: data.stay, prefs: data.prefs, q: data.q })); } catch (e) { console.error("live", e); }
     registerPlaces(live);
     if (live.length >= 10) pool = [...live, ...pool.filter((p) => p.cat === "Hike" || p.cat === "Scenic stop").slice(0, 6)];
     else pool = [...live, ...pool];
+    // Code filters, so the model chooses instead of searching: closed that day, avoided, over budget
+    pool = pool.filter((p) => !closedToday(p.hours) && !avoidCats.has(p.cat.toLowerCase()));
+    if (data.budget) {
+      const cheap = pool.filter((p) => p.price <= data.budget || p.cat === "Stay");
+      if (cheap.length >= 8) pool = cheap;
+    }
     const saved: Place[] = data.saved.filter((p) => p.cat !== "Stay").map(({ dish: _d, ...p }) => ({ ...p, live: p.live ?? !PLACES.some((x) => x.id === p.id) }));
     registerPlaces(saved.filter((p) => p.live));
     pool = [...saved, ...pool.filter((p) => !saved.some((x) => x.id === p.id))];
@@ -104,11 +113,11 @@ export const generatePlans = createServerFn({ method: "POST" })
     const prompt = `Request: "${data.q}". Chips: ${data.what.join(", ") || "none"}. Areas: ${areas.join(", ")} (STRONGLY prefer places in these areas; use nearby areas only if nothing fits, and say so in the vibe). Day: ${data.day}, start ${data.time}.
 Candidates are real places from Google Maps (rating, review count, opening hours on that day). Prefer high rating with many reviews. NEVER schedule a stop outside its hours; skip places "Closed" that day. Use ONLY these ids: ${JSON.stringify(candidates)}
 Group: ${data.people} people. Time window: ${data.time} to ${data.end ?? "open"}. Pace: ${data.pace} (Chill = 2-3 stops with breathing room; Packed = 3-4 stops).
-NOT into (never include these): ${data.avoid.join(", ") || "nothing"}. Preferences: ${data.prefs.join(", ") || "none"}.
+NOT into (never include these): ${data.avoid.join(", ") || "nothing"}. Preferences (respect food needs strictly, e.g. Vegan / Halal / No alcohol means pick places that fit): ${data.prefs.join(", ") || "none"}.${data.budget ? ` Budget: ${"$".repeat(data.budget)} max per place.` : ""}
 Overnight: ${data.stay === "No" ? "no, day trip only. Never use Stay places." : `yes, end each plan with ONE Stay place of type "${data.stay === "Surprise me" ? "any" : data.stay}" (its note starts with the type), in or near the last area. The Stay counts as an extra stop.`}
 RULES (be the smartest local friend):
 - Timing: breakfast 8:00-10:30, brunch 10:00-13:00, lunch 12:30-15:30, dinner 19:30-22:30, hikes start before 11:00, Sea view / sunset stops ~45 min before sunset (${sunset} today). Coffee/dessert between meals.
-- Geography: estimate drives from lat/lng (~1.5 min per km on Lebanese roads, mountains slower). Order stops so the route flows one direction, never backtrack. Max 30 min between stops unless it is a road trip (max 60).
+- Geography: estimate drives from lat/lng (~1.5 min per km on Lebanese roads, mountains slower). Order stops so the route flows one direction, never backtrack. Max ${data.maxDrive} min between stops unless it is a road trip (max 60).
 - Everything must fit in the time window, including drives. Drop stops rather than overflow.
 - Never two meals back to back, never two of the same category in a row.
 - For each stop give "time" as "HH:MM" (your suggested arrival).
@@ -116,38 +125,47 @@ Make exactly 3 genuinely different weekend plans (e.g. one city, one mountain/hi
 SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.map((p) => ({ id: p.id, name: p.name, area: p.area, mustOrder: p.dish })))}. Build plans AROUND them: every plan should include at least one saved place (more when they are close together), still respecting hours, timing and geography. Mention the mustOrder dish in that stop's reason when given.` : ""}`;
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "openai/gpt-6-astra",
-          messages: [
-            { role: "system", content: 'You plan fun Lebanese weekend outings. Light, slightly Lebanese tone in English. Reply ONLY with JSON: {"plans":[{"title":string,"vibe":string,"stops":[{"placeId":string,"reason":string,"time":"HH:MM"}]}]}' },
-            { role: "user", content: prompt },
-          ],
-          response_format: { type: "json_object" },
-          reasoning_effort: "medium",
-        }),
-      });
-      if (res.status === 429) return { error: "Too many plans at once. Breathe, try again in a minute." };
-      if (res.status === 402) return { error: "Out of AI credits for now." };
-      if (!res.ok) { console.error(res.status, await res.text()); continue; }
+      const res = await askJSON(
+        "You plan fun Lebanese weekend outings, like the smartest local friend. Light, slightly Lebanese tone in English. Use only the place ids you are given.",
+        prompt,
+        PlanOut,
+      );
+      if (!res.ok && res.kind === "credits") return { error: "Out of AI credits for now." };
+      if (!res.ok && res.kind === "busy") return { error: "Too many plans at once. Breathe, try again in a minute." };
+      if (!res.ok && (res.kind === "key" || res.kind === "refused")) { console.error("ai", res.kind, res.error); break; }
+      if (!res.ok) { console.error("ai", res.error); continue; }
       try {
-        const json = await res.json();
-        const args = json.choices[0].message.content;
-        const parsed = AiOut.parse(JSON.parse(args));
+        const parsed = AiOut.parse(res.data);
+        const taken = new Set<string>();
         const plans: Plan[] = parsed.plans.map((p) => {
           let t = toMin(data.time);
-          const valid = p.stops.filter((s) => byId(s.placeId));
-          return {
-            title: p.title, vibe: p.vibe,
-            stops: valid.map((s, i) => {
-              const place = byId(s.placeId)!;
-              if (i > 0) { const prev = byId(valid[i - 1]!.placeId)!; t += prev.mins + driveMins(prev, place); t = Math.ceil(t / 15) * 15; }
-              if (s.time && /^\d{1,2}:\d{2}$/.test(s.time)) t = Math.max(t, toMin(s.time));
-              return { placeId: s.placeId, reason: s.reason, time: t };
-            }).filter((st, i) => i < 2 || !data.end || byId(st.placeId)!.cat === "Stay" || st.time <= toMin(data.end!)),
-          };
+          const out: Stop[] = [];
+          for (const s of p.stops) {
+            let place = byId(s.placeId);
+            if (!place || out.some((o) => o.placeId === place!.id)) continue;
+            let reason = s.reason;
+            const prev = out.length ? byId(out.at(-1)!.placeId)! : null;
+            // t is the previous stop's arrival; work on a copy so a dropped stop doesn't move the clock
+            let at = prev ? Math.ceil((t + prev.mins + driveMins(prev, place)) / 15) * 15 : t;
+            if (s.time && /^\d{1,2}:\d{2}$/.test(s.time)) at = Math.max(at, toMin(s.time));
+            // Google hours are the truth: if the model put a stop at a closed time,
+            // swap in the nearest open place of the same type, or drop the stop.
+            if (place.cat !== "Stay" && !openAt(place.hours, at, place.mins)) {
+              const from = prev ?? place;
+              const alt = pool
+                .filter((x) => x.cat === place!.cat && x.id !== place!.id && !taken.has(x.id) && !out.some((o) => o.placeId === x.id)
+                  && openAt(x.hours, at, x.mins) && driveMins(from, x) <= data.maxDrive + 15)
+                .sort((a, b) => driveMins(from, a) - driveMins(from, b) || b.rating - a.rating)[0];
+              if (!alt) continue;
+              place = alt;
+              reason = alt.reason || reason;
+            }
+            if (out.length >= 2 && data.end && place.cat !== "Stay" && at > toMin(data.end)) break;
+            out.push({ placeId: place.id, reason, time: at });
+            t = at;
+          }
+          out.forEach((o) => taken.add(o.placeId));
+          return { title: p.title, vibe: p.vibe, stops: out };
         }).filter((p) => p.stops.length >= 2);
         if (plans.length) {
           const used = [...new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)))].map((id) => byId(id)!).filter((p) => p.live);
@@ -159,3 +177,5 @@ SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.m
     }
     return { error: "Our friend who knows every spot is not answering. Try again?" };
   });
+
+export const checkStatus = createServerFn({ method: "GET" }).handler(async () => ({ ...(await placesStatus()), ai: await aiStatus() }));

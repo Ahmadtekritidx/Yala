@@ -1,6 +1,7 @@
+import { aiConfigured, askJSON } from "./ai.server";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { allPlaces, CATEGORIES, type Category, type Place } from "./places";
 import { findPlace } from "./live.server";
 
@@ -66,8 +67,7 @@ export const readReel = createServerFn({ method: "POST" })
     z.object({ url: z.string().url().max(500), hint: z.string().max(120).default("") }).parse(d),
   )
   .handler(async ({ data }): Promise<ReelResult> => {
-    const key = process.env["LOVABLE_API_KEY"];
-    if (!key) return { error: "AI not configured" };
+    if (!aiConfigured()) return { error: "AI not configured" };
     const ip = (
       getRequestHeader("cf-connecting-ip") ||
       getRequestHeader("x-forwarded-for")?.split(",")[0] ||
@@ -93,34 +93,12 @@ export const readReel = createServerFn({ method: "POST" })
     const known = allPlaces()
       .filter((p) => p.cat !== "Stay")
       .map((p) => ({ id: p.id, name: p.name, area: p.area }));
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "openai/gpt-6-astra",
-        messages: [
-          {
-            role: "system",
-            content: `You find the ONE real place in Lebanon that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`,
-          },
-          {
-            role: "user",
-            content: `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) {
-      console.error("readReel", res.status);
-      return { error: "Couldn't read it right now. Try again?" };
-    }
-    let out: z.infer<typeof Out>;
-    try {
-      out = Out.parse(JSON.parse((await res.json()).choices[0].message.content));
-    } catch {
+    const ai = await askJSON(`You find the ONE real place in Lebanon that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`, `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`, Out, "low");
+    if (!ai.ok) {
+      console.error("readReel", ai.kind, ai.error);
       return { error: "Couldn't find a place in this post. Add the name and try again." };
     }
+    const out = ai.data;
 
     const dish = out.dish ?? undefined;
     const match = out.placeId ? allPlaces().find((p) => p.id === out.placeId) : undefined;

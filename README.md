@@ -1,6 +1,11 @@
-# Go Landing Page
+# Yalla
 
-build me where to go landing page simple no white and bit text
+Say what you feel like doing this weekend, get 3 ready plans in 5 seconds, share with your friends.
+
+## Docs
+
+- [Product Requirements (PRD)](docs/PRD.md)
+- [Roadmap](roadmap.md)
 
 This project was built with [Lovable](https://lovable.dev).
 

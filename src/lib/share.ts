@@ -40,57 +40,13 @@ export function encodePlan(p: Shared) {
     .replace(/=+$/, "");
 }
 
-export function decodePlan(code: string): Shared | null {
+export function decodePlan(code: string): (Shared & { places: Place[] }) | null {
   try {
     const b = code.replace(/-/g, "+").replace(/_/g, "/");
     const o = JSON.parse(decodeURIComponent(escape(atob(b))));
-    if (Array.isArray(o.x))
-      registerPlaces(
-        o.x.map(
-          ([
-            id,
-            name,
-            area,
-            cat,
-            rating,
-            price,
-            lat,
-            lng,
-            mins,
-            maps,
-            web,
-            insta,
-            reviews,
-          ]: any[]) => ({
-            id,
-            name,
-            area,
-            cat,
-            rating,
-            price,
-            lat,
-            lng,
-            mins,
-            reason: "",
-            maps: maps || undefined,
-            web: web || undefined,
-            insta: insta || undefined,
-            reviews,
-            live: true,
-          }),
-        ),
-      );
-    return {
-      clips: Array.isArray(o.c) ? o.c.map(String) : undefined,
-      title: o.t,
-      vibe: o.v,
-      day: o.d,
-      stops: o.s.map(([placeId, time, reason]: [string, number, string]) => ({
-        placeId,
-        time,
-        reason,
-      })),
-    };
+    const places: Place[] = Array.isArray(o.x) ? o.x.map(([id, name, area, cat, rating, price, lat, lng, mins, maps, web, insta, reviews]: any[]) => ({ id, name, area, cat, rating, price, lat, lng, mins, reason: "", maps: maps || undefined, web: web || undefined, insta: insta || undefined, reviews, live: true })) : [];
+    registerPlaces(places);
+    return { clips: Array.isArray(o.c) ? o.c.map(String) : undefined, title: o.t, vibe: o.v, day: o.d, places, stops: o.s.map(([placeId, time, reason]: [string, number, string]) => ({ placeId, time, reason })) };
   } catch {
     return null;
   }

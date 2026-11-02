@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { encodePlan } from "@/lib/share";
 import { toMin } from "@/lib/places";
+import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/profile";
 import { SavedReels } from "@/components/SavedReels";
 
 export const Route = createFileRoute("/")({
@@ -74,12 +75,15 @@ function Home() {
   const [time, setTime] = useState("12:00");
   const [end, setEnd] = useState("18:00");
   const [recent, setRecent] = useState<Recent[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     try {
       setRecent(JSON.parse(localStorage.getItem("yalla:recent") || "[]"));
-      const last = localStorage.getItem("yalla:lastArea");
+      const pr = loadProfile();
+      setProfile(pr);
+      const last = localStorage.getItem("yalla:lastArea") || pr?.homeArea;
       if (last) setWhere([last]);
     } catch {}
   }, []);
@@ -91,20 +95,30 @@ function Home() {
 
   const go = () => {
     if (where[0]) localStorage.setItem("yalla:lastArea", where[0]);
-    navigate({ to: "/plans", search: { q: text.trim(), what: what.join(","), where: where.join(","), day, time, end } });
+    navigate({ to: "/plans", search: { q: text.trim(), what: what.join(","), where: where.join(","), day, time, end, ...profileSearch(profile) } });
   };
 
   return (
     <main className="mx-auto min-h-screen max-w-xl px-5 pb-20 pt-10">
-      <p className="font-display text-2xl font-extrabold tracking-tight">yalla<span className="text-primary">.</span></p>
+      <div className="flex items-center justify-between">
+        <p className="font-display text-2xl font-extrabold tracking-tight">yalla<span className="text-primary">.</span></p>
+        <Link to="/profile" className="min-h-11 rounded-full pop press bg-card px-4 py-2.5 text-sm font-medium">
+          {profile?.name ? `Hi ${profile.name}` : "Profile"}
+        </Link>
+      </div>
       <h1 className="mt-6 font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl">
         What are we doing <span className="inline-block -rotate-2 rounded-xl bg-accent px-2">this weekend?</span>
       </h1>
 
+      <Link to="/profile" className="mt-4 block text-sm text-muted-foreground">
+        {profile ? <>Plans fit you: <span className="font-medium text-foreground">{profileSummary(profile)}</span> · <span className="font-bold text-primary">edit</span></>
+          : <><span className="font-bold text-primary">Set your preferences</span> so every plan fits you</>}
+      </Link>
+
       <div className="mt-6 flex flex-wrap gap-2">
         {QUICK.map((x) => (
           <button key={x.label} type="button"
-            onClick={() => navigate({ to: "/plans", search: { q: x.q, what: "", where: where.join(","), day: "day" in x ? x.day! : day, time: "time" in x ? x.time! : time, end } })}
+            onClick={() => navigate({ to: "/plans", search: { q: x.q, what: "", where: where.join(","), day: "day" in x ? x.day! : day, time: "time" in x ? x.time! : time, end, ...profileSearch(profile) } })}
             className="min-h-11 shrink-0 rounded-full pop press bg-accent text-accent-foreground px-4 text-sm font-bold">
             {x.label}
           </button>
