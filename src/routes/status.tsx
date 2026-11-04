@@ -13,7 +13,7 @@ type S = Awaited<ReturnType<typeof checkStatus>>;
 function Row({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
   return (
     <li className="flex items-start gap-3 rounded-2xl pop bg-card p-4">
-      <span className={`mt-0.5 font-bold ${ok ? "text-primary" : "text-destructive"}`}>{ok ? "✓" : "✕"}</span>
+      <span className={`mt-0.5 font-bold ${ok ? "text-emerald-600" : "text-destructive"}`}>{ok ? "✓" : "✕"}</span>
       <div><p className="font-bold">{label}</p>{detail && <p className="text-sm text-muted-foreground">{detail}</p>}</div>
     </li>
   );
