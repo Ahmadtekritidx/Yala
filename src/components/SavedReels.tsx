@@ -49,7 +49,9 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
     setBusy(true);
     setMsg("");
     try {
-      const r = await read({ data: { url: u, hint, ...(isLebanon(loadCity()) ? {} : { city: loadCity() }) } });
+      const r = await read({
+        data: { url: u, hint, ...(isLebanon(loadCity()) ? {} : { city: loadCity() }) },
+      });
       if ("error" in r) {
         setMsg(r.error);
         setNeedHint(true);

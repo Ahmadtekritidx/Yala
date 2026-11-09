@@ -13,14 +13,40 @@ export type Profile = {
 };
 
 export const DIETS = ["Vegetarian", "Vegan", "Halal", "Gluten free", "No alcohol"];
-export const LIKES = ["Something new", "Hidden gems", "Sea view", "Mountains", "Live music", "Quiet spots", "Kids friendly", "Pet friendly", "Outdoor seating"];
-export const AVOIDS = ["Hike", "Sea view", "Walk", "Dessert", "Specialty coffee", "Breakfast", "Brunch"];
+export const LIKES = [
+  "Something new",
+  "Hidden gems",
+  "Sea view",
+  "Mountains",
+  "Live music",
+  "Quiet spots",
+  "Kids friendly",
+  "Pet friendly",
+  "Outdoor seating",
+];
+export const AVOIDS = [
+  "Hike",
+  "Sea view",
+  "Walk",
+  "Dessert",
+  "Specialty coffee",
+  "Breakfast",
+  "Brunch",
+];
 export const STAYS = ["No", "Guesthouse", "Hotel", "Glamping", "Camping", "Surprise me"];
 export const AREAS = ["Beirut", "Batroun", "Jbeil", "Tripoli", "Broummana", "Jounieh"];
 
 export const EMPTY: Profile = {
-  name: "", homeArea: "", people: "2", budget: 0, pace: "Chill", maxDrive: 30,
-  diet: [], likes: [], avoid: [], stay: "No",
+  name: "",
+  homeArea: "",
+  people: "2",
+  budget: 0,
+  pace: "Chill",
+  maxDrive: 30,
+  diet: [],
+  likes: [],
+  avoid: [],
+  stay: "No",
 };
 
 const KEY = "yalla:profile";
@@ -35,7 +61,11 @@ export function loadProfile(): Profile | null {
 }
 
 export function saveProfile(p: Profile) {
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch {}
+  try {
+    localStorage.setItem(KEY, JSON.stringify(p));
+  } catch {
+    /* storage blocked: the profile just isn't remembered */
+  }
 }
 
 // What the plans page receives as search params
@@ -62,5 +92,7 @@ export function profileSummary(p: Profile) {
     ...p.likes.slice(0, 2),
     ...p.avoid.map((a) => `no ${a.toLowerCase()}`),
     p.stay !== "No" ? `stay: ${p.stay.toLowerCase()}` : "",
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

@@ -1,5 +1,5 @@
 import type { Plan } from "./plans.functions";
-import { byId, registerPlaces, type Place } from "./places";
+import { byId, CATEGORIES, registerPlaces, type Category, type Place } from "./places";
 import { clipsFor, savedClips } from "./media";
 
 export type Shared = Plan & { day: string; clips?: string[] };
@@ -69,11 +69,11 @@ function fromRaw(o: any): Decoded {
           web,
           insta,
           reviews,
-        ]: any[]) => ({
+        ]: unknown[]) => ({
           id: String(id),
           name: String(name),
           area: String(area),
-          cat,
+          cat: (CATEGORIES as unknown[]).includes(cat) ? (cat as Category) : "Lunch",
           rating: num(rating),
           price: Math.min(3, Math.max(1, num(price, 2))) as 1 | 2 | 3,
           lat: num(lat),
@@ -95,7 +95,9 @@ function fromRaw(o: any): Decoded {
     vibe: String(o.v ?? ""),
     day: String(o.d ?? "Saturday"),
     date: typeof o.a === "string" ? o.a : undefined,
-    base: Array.isArray(o.b) ? { name: String(o.b[0]), lat: num(o.b[1]), lng: num(o.b[2]) } : undefined,
+    base: Array.isArray(o.b)
+      ? { name: String(o.b[0]), lat: num(o.b[1]), lng: num(o.b[2]) }
+      : undefined,
     places,
     stops: o.s.map(([placeId, time, reason]: [unknown, unknown, unknown]) => ({
       placeId: String(placeId),
@@ -145,5 +147,7 @@ export function saveRecent(id: string, title: string) {
     }[];
     const next = [{ id, title }, ...list.filter((r) => r.id !== id)].slice(0, 8);
     localStorage.setItem("yalla:recent", JSON.stringify(next));
-  } catch {}
+  } catch {
+    /* storage full or blocked: recent plans are a nice-to-have */
+  }
 }
