@@ -48,6 +48,9 @@ export const encodePlan = (p: Shared) => pack(toRaw(p));
 export const encodeTrip = (days: Shared[]) => pack({ T: days.map(toRaw) });
 
 type Decoded = Shared & { places: Place[]; trip?: Decoded[] | undefined };
+// Anyone can craft a share link, so its links must be plain web links and its numbers real numbers.
+const webLink = (u: unknown) => (typeof u === "string" && /^https?:\/\//i.test(u) ? u : undefined);
+const num = (n: unknown, fallback = 0) => (Number.isFinite(Number(n)) ? Number(n) : fallback);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fromRaw(o: any): Decoded {
   const places: Place[] = Array.isArray(o.x)
@@ -67,37 +70,37 @@ function fromRaw(o: any): Decoded {
           insta,
           reviews,
         ]: any[]) => ({
-          id,
-          name,
-          area,
+          id: String(id),
+          name: String(name),
+          area: String(area),
           cat,
-          rating,
-          price,
-          lat,
-          lng,
-          mins,
+          rating: num(rating),
+          price: Math.min(3, Math.max(1, num(price, 2))) as 1 | 2 | 3,
+          lat: num(lat),
+          lng: num(lng),
+          mins: num(mins, 60),
           reason: "",
-          maps: maps || undefined,
-          web: web || undefined,
-          insta: insta || undefined,
-          reviews,
+          maps: webLink(maps),
+          web: webLink(web),
+          insta: webLink(insta),
+          reviews: num(reviews),
           live: true,
         }),
       )
     : [];
   registerPlaces(places);
   return {
-    clips: Array.isArray(o.c) ? o.c.map(String) : undefined,
-    title: o.t,
-    vibe: o.v,
-    day: o.d,
-    date: o.a,
-    base: Array.isArray(o.b) ? { name: String(o.b[0]), lat: Number(o.b[1]), lng: Number(o.b[2]) } : undefined,
+    clips: Array.isArray(o.c) ? o.c.map((c: unknown) => webLink(c) ?? "") : undefined,
+    title: String(o.t ?? ""),
+    vibe: String(o.v ?? ""),
+    day: String(o.d ?? "Saturday"),
+    date: typeof o.a === "string" ? o.a : undefined,
+    base: Array.isArray(o.b) ? { name: String(o.b[0]), lat: num(o.b[1]), lng: num(o.b[2]) } : undefined,
     places,
-    stops: o.s.map(([placeId, time, reason]: [string, number, string]) => ({
-      placeId,
-      time,
-      reason,
+    stops: o.s.map(([placeId, time, reason]: [unknown, unknown, unknown]) => ({
+      placeId: String(placeId),
+      time: num(time),
+      reason: String(reason ?? ""),
     })),
   };
 }

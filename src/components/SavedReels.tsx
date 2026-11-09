@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { readReel } from "@/lib/media.functions";
 import { isLebanon, loadCity } from "@/lib/city";
@@ -12,6 +12,9 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
   const [hint, setHint] = useState("");
   const [needHint, setNeedHint] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Same as busy, but set at once: Enter in either box while a link is being read does nothing,
+  // instead of starting a second read (and a second AI call) before React re-renders.
+  const reading = useRef(false);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -31,6 +34,7 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
   }, []);
 
   async function go(link = url) {
+    if (reading.current) return;
     const u = link.trim().match(/https?:\/\/\S+/)?.[0];
     if (!u) {
       setMsg("Paste a TikTok, Instagram or YouTube link");
@@ -41,6 +45,7 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
       setMsg("Instagram hides captions. Type the place name, then Save.");
       return;
     }
+    reading.current = true;
     setBusy(true);
     setMsg("");
     try {
@@ -58,6 +63,7 @@ export function SavedReels({ onPlan }: { onPlan: (areas: string[]) => void }) {
     } catch {
       setMsg("Something broke. Try again?");
     } finally {
+      reading.current = false;
       setBusy(false);
     }
   }

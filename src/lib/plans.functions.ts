@@ -1,15 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeader } from "@tanstack/react-start/server";
+import { rateLimit } from "./limit.server";
 
 // Per-visitor limit (by IP): enough for shuffles and retries, a wall for scripts.
 const LIMIT = 20, WINDOW = 3600e3;
-const hits = new Map<string, number[]>();
 import { z } from "zod";
-import { CATEGORIES, PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerPlaces, type Category, type Place } from "./places";
+import { CATEGORIES, PLACES, AREAS, AREA_CENTER, kmBetween, byId, driveMins, toMin, registerGooglePlaces, type Category, type Place } from "./places";
 import { livePlaces, findInstas, placesStatus } from "./live.server";
 import { openAt, closedToday, hoursOn, WEEKDAYS } from "./hours";
 import { isLebanon } from "./city";
 import { aiConfigured, aiStatus, askJSON, PlanOut } from "./ai.server";
+
+// Links sent by the browser: keep only plain web links.
+const webLink = z.string().max(300).optional().transform((u) => (u && /^https?:\/\//i.test(u) ? u : undefined));
 
 const Input = z.object({
   q: z.string().max(300).default(""),
@@ -33,7 +35,7 @@ const Input = z.object({
     id: z.string().max(200), name: z.string().max(120), area: z.string().max(60),
     cat: z.enum(CATEGORIES as [Category, ...Category[]]), rating: z.number(), price: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     reason: z.string().max(200), lat: z.number(), lng: z.number(), mins: z.number(),
-    maps: z.string().max(300).optional(), web: z.string().max(300).optional(), insta: z.string().max(300).optional(),
+    maps: webLink, web: webLink, insta: webLink,
     reviews: z.number().optional(), live: z.boolean().optional(), dish: z.string().max(60).optional(),
   })).max(15).default([]),
 });
@@ -53,15 +55,8 @@ export const generatePlans = createServerFn({ method: "POST" })
   .inputValidator((d) => Input.parse(d))
   .handler(async ({ data }) => {
     if (!aiConfigured()) return { error: "The planner isn't switched on yet (missing AI key)." };
-    const ip = (getRequestHeader("cf-connecting-ip") || getRequestHeader("x-forwarded-for")?.split(",")[0] || "anon").trim();
-    const now = Date.now();
-    const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW);
-    if (recent.length >= LIMIT) {
-      const mins = Math.ceil((WINDOW - (now - recent[0]!)) / 60000);
-      return { error: `Easy habibi, that's a lot of plans. Try again in ${mins} min.` };
-    }
-    recent.push(now); hits.set(ip, recent);
-    if (hits.size > 5000) hits.clear();
+    const mins = rateLimit("plans", LIMIT, WINDOW);
+    if (mins) return { error: `Easy habibi, that's a lot of plans. Try again in ${mins} min.` };
     // Trip mode: one plan per day from the start date, each with its own weekday (opening hours differ).
     const trip = data.days > 1;
     const startDate = data.start ? new Date(data.start + "T12:00:00Z") : new Date();
@@ -109,7 +104,8 @@ export const generatePlans = createServerFn({ method: "POST" })
     const avoidCats = new Set(data.avoid.map((a) => a.toLowerCase()));
     let live: Place[] = [];
     try { live = (await livePlaces({ areas: liveAreas, cats: catList.filter((c) => !avoidCats.has(c.toLowerCase())).slice(0, 7), day: dayOf(0), stay: data.stay, prefs: data.prefs, q: data.q, geo: geo && data.base ? { ...geo, lat: data.base.lat, lng: data.base.lng } : geo })); } catch (e) { console.error("live", e); }
-    registerPlaces(live);
+    registerGooglePlaces(live);
+    const fromGoogle = new Set(live);
     if (geo && live.length < 4) return { error: `We couldn't find enough good spots in ${geo.name} right now. Try a bigger city nearby?` };
     if (live.length >= 10) pool = [...live, ...pool.filter((p) => p.cat === "Hike" || p.cat === "Scenic stop").slice(0, 6)];
     else pool = [...live, ...pool];
@@ -121,8 +117,10 @@ export const generatePlans = createServerFn({ method: "POST" })
     }
     // Saves from another city or country would wreck the route, keep only ones near this plan.
     const saved: Place[] = data.saved.filter((p) => p.cat !== "Stay" && (!geo || kmBetween([geo.lat, geo.lng], [p.lat, p.lng]) <= 60)).map(({ dish: _d, ...p }) => ({ ...p, live: p.live ?? !PLACES.some((x) => x.id === p.id) }));
-    registerPlaces(saved.filter((p) => p.live));
     pool = [...saved, ...pool.filter((p) => !saved.some((x) => x.id === p.id))];
+    // This request's places first: saved places live here only, never in the shared registry.
+    const local = new Map(pool.map((p) => [p.id, p]));
+    const find = (id: string) => local.get(id) ?? byId(id);
     const candidates = pool.map((p) => ({
       id: p.id, name: p.name, area: p.area, category: p.cat, rating: p.rating,
       price: "$".repeat(p.price), note: p.reason, new: !!p.isNew, lat: +p.lat.toFixed(3), lng: +p.lng.toFixed(3), stayMins: p.mins, reviews: p.reviews, hours: p.hours,
@@ -169,10 +167,10 @@ SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.f
           let t = toMin(data.time);
           const out: Stop[] = [];
           for (const s of p.stops) {
-            let place = byId(s.placeId);
+            let place = find(s.placeId);
             if (!place || out.some((o) => o.placeId === place!.id) || (trip && taken.has(place.id))) continue;
             let reason = s.reason;
-            const prev = out.length ? byId(out.at(-1)!.placeId)! : null;
+            const prev = out.length ? find(out.at(-1)!.placeId)! : null;
             // t is the previous stop's arrival; work on a copy so a dropped stop doesn't move the clock
             let at = prev ? Math.ceil((t + prev.mins + driveMins(prev, place)) / 15) * 15 : t;
             if (s.time && /^\d{1,2}:\d{2}$/.test(s.time)) at = Math.max(at, toMin(s.time));
@@ -196,14 +194,24 @@ SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.f
           return { title: p.title, vibe: p.vibe, stops: out, ...(trip ? { day, date: tripDays[k]!.date } : {}), ...(data.base ? { base: data.base } : {}) };
         }).filter((p) => p.stops.length >= 2);
         if (plans.length) {
-          const used = [...new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)))].map((id) => byId(id)!).filter((p) => p.live);
+          const used = [...new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)))].map((id) => find(id)!).filter((p) => p.live);
           await findInstas(used);
-          registerPlaces(used);
-          return { plans, places: pool.filter((p) => p.live).map((p) => byId(p.id)!) };
+          registerGooglePlaces(used.filter((p) => fromGoogle.has(p)));
+          return { plans, places: pool.filter((p) => p.live) };
         }
       } catch (e) { console.error("bad AI output", e); }
     }
     return { error: "Our friend who knows every spot is not answering. Try again?" };
   });
 
-export const checkStatus = createServerFn({ method: "GET" }).handler(async () => ({ ...(await placesStatus()), ai: await aiStatus() }));
+// /status is public and each check makes a paid Claude call and a Google search,
+// so one check is shared by everyone for a few minutes.
+const STATUS_TTL = 5 * 60e3;
+let lastStatus: { at: number; v: Promise<Awaited<ReturnType<typeof placesStatus>> & { ai: Awaited<ReturnType<typeof aiStatus>>; checkedAt: number }> } | null = null;
+export const checkStatus = createServerFn({ method: "GET" }).handler(() => {
+  if (!lastStatus || Date.now() - lastStatus.at > STATUS_TTL) {
+    const at = Date.now();
+    lastStatus = { at, v: (async () => ({ ...(await placesStatus()), ai: await aiStatus(), checkedAt: at }))() };
+  }
+  return lastStatus.v;
+});

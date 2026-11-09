@@ -106,12 +106,20 @@ export function kmBetween(a: [number, number], b: [number, number]) {
   const R = 6371, t = Math.PI / 180;
   return 2 * R * Math.asin(Math.sqrt(Math.sin(((b[0] - a[0]) * t) / 2) ** 2 + Math.cos(a[0] * t) * Math.cos(b[0] * t) * Math.sin(((b[1] - a[1]) * t) / 2) ** 2));
 }
-// Live places fetched from Google (registered at runtime on server and client)
+// Live places fetched from Google, registered at runtime.
+// In the browser the registry belongs to one visitor. On the server it is shared by every visitor,
+// so only places that came straight from Google go in there (registerGooglePlaces). Places sent by a
+// browser (saved reels, share links) stay inside that one request and never reach other visitors.
 const LIVE = new Map<string, Place>();
-export function registerPlaces(list: Place[]) {
+function addPlaces(list: Place[]) {
   if (LIVE.size > 3000) LIVE.clear();
   for (const p of list) LIVE.set(p.id, { ...LIVE.get(p.id), ...p });
 }
+export function registerPlaces(list: Place[]) {
+  if (typeof window === "undefined") return;
+  addPlaces(list);
+}
+export const registerGooglePlaces = addPlaces;
 export const byId = (id: string) => LIVE.get(id) ?? PLACES.find((p) => p.id === id);
 export const allPlaces = () => [...LIVE.values(), ...PLACES];
 

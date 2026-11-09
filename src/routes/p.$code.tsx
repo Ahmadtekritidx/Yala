@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
 import { VibeStrip } from "@/components/VibeStrip";
 import { PlanStory } from "@/components/PlanStory";
-import { byId, fmt, driveMins, registerPlaces } from "@/lib/places";
+import { byId, fmt, driveMins, registerPlaces, type Place } from "@/lib/places";
+
+type Find = (id: string) => Place | undefined;
 
 export const Route = createFileRoute("/p/$code")({
   loader: ({ params }) => ({ plan: decodePlan(params.code) }),
@@ -21,7 +23,7 @@ export const Route = createFileRoute("/p/$code")({
   component: SharedPlan,
 });
 
-function ics(title: string, day: string, stops: { placeId: string; time: number }[]) {
+function ics(find: Find, title: string, day: string, stops: { placeId: string; time: number }[]) {
   const base = nextDate(day);
   const f = (m: number) => {
     const d = new Date(base.getTime() + m * 60000);
@@ -29,7 +31,7 @@ function ics(title: string, day: string, stops: { placeId: string; time: number 
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}00`;
   };
   const ev = stops.map((s, i) => {
-    const pl = byId(s.placeId)!;
+    const pl = find(s.placeId)!;
     return `BEGIN:VEVENT\nUID:yalla-${Date.now()}-${i}\nDTSTAMP:${f(0)}\nDTSTART:${f(s.time)}\nDTEND:${f(s.time + pl.mins)}\nSUMMARY:${pl.name} (${title})\nLOCATION:${pl.name}, ${pl.area}\nEND:VEVENT`;
   });
   return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Yalla//EN\r\n${ev.join("\r\n")}\r\nEND:VCALENDAR`.replace(/\n(?!\r)/g, "\r\n").replace(/\r\r/g, "\r");
@@ -41,16 +43,16 @@ const gq = (p: Loc) => encodeURIComponent(`${p.name}, ${p.area}${p.live ? "" : "
 const mapsPlace = (p: Loc) => `https://www.google.com/maps/search/?api=1&query=${gq(p)}`;
 const insta = (name: string) => `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(name)}`;
 
-function gcal(title: string, vibe: string, day: string, stops: { placeId: string; time: number }[]) {
+function gcal(find: Find, title: string, vibe: string, day: string, stops: { placeId: string; time: number }[]) {
   const base = nextDate(day);
   const f = (m: number) => {
     const d = new Date(base.getTime() + m * 60000), p = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}00`;
   };
-  const last = stops.at(-1)!, lp = byId(last.placeId)!;
+  const last = stops.at(-1)!, lp = find(last.placeId)!;
   const end = last.time + (lp.cat === "Stay" ? 60 : lp.mins);
-  const details = stops.map((s) => { const p = byId(s.placeId)!; return `${fmt(s.time)} · ${p.name} (${p.area})`; }).join("\n") + `\n\n${vibe}`;
-  const first = byId(stops[0]!.placeId)!;
+  const details = stops.map((s) => { const p = find(s.placeId)!; return `${fmt(s.time)} · ${p.name} (${p.area})`; }).join("\n") + `\n\n${vibe}`;
+  const first = find(stops[0]!.placeId)!;
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("yalla: " + title)}&dates=${f(stops[0]!.time)}/${f(end)}&details=${encodeURIComponent(details)}&location=${gq(first)}`;
 }
 
@@ -59,7 +61,10 @@ function SharedPlan() {
   const [dayIdx, setDayIdx] = useState(0);
   const plan = loaded?.trip?.[dayIdx] ?? loaded;
   const when = plan ? plan.date ?? plan.day : "Saturday";
-  // The loader may have run on the server: register the plan's live Google places in this browser too
+  // Places come from the link itself, so the server render and the browser see the same stops.
+  // The server's shared registry never takes them in; the browser registers them for PlanStory / VibeStrip.
+  const local = new Map((plan?.places ?? []).map((p) => [p.id, p]));
+  const find: Find = (id) => local.get(id) ?? byId(id);
   if (plan?.places.length) registerPlaces(plan.places);
   const router = useRouter();
   const [copied, setCopied] = useState(false);
@@ -79,7 +84,7 @@ function SharedPlan() {
     );
   }
 
-  const stopsP = plan.stops.map((s) => byId(s.placeId)).filter(Boolean) as NonNullable<ReturnType<typeof byId>>[];
+  const stopsP = plan.stops.map((s) => find(s.placeId)).filter((p): p is Place => !!p);
   const date = nextDate(when).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
   const share = async (asStory = false) => {
@@ -92,7 +97,7 @@ function SharedPlan() {
   };
 
   const cal = () => {
-    const blob = new Blob([ics(plan.title, when, plan.stops)], { type: "text/calendar" });
+    const blob = new Blob([ics(find, plan.title, when, plan.stops)], { type: "text/calendar" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = "yalla-plan.ics"; a.click();
   };
@@ -123,9 +128,9 @@ function SharedPlan() {
       {plan.base && <p className="mt-6 text-sm text-muted-foreground">🏨 Starts and ends at <span className="font-bold text-foreground">{plan.base.name}</span></p>}
       <ol className="relative mt-10 space-y-8 border-l-2 border-dashed border-primary/40 pl-6">
         {plan.stops.map((s, i) => {
-          const pl = byId(s.placeId);
+          const pl = find(s.placeId);
           if (!pl) return null;
-          const prev = i > 0 ? byId(plan.stops[i - 1]!.placeId) : undefined;
+          const prev = i > 0 ? find(plan.stops[i - 1]!.placeId) : undefined;
           const q = gq(pl);
           return (
             <li key={i} className="relative">
@@ -159,7 +164,7 @@ function SharedPlan() {
         <button onClick={() => void share()} className="min-h-12 rounded-2xl pop press bg-primary font-bold text-primary-foreground">{copied ? "Link copied ✓" : "Share"}</button>
         <a href={`https://wa.me/?text=${encodeURIComponent(`${plan.title} — ${plan.vibe}\n`)}${encodeURIComponent(here)}`} target="_blank" rel="noreferrer"
           className="flex min-h-12 items-center justify-center rounded-2xl pop press bg-card font-bold">WhatsApp</a>
-        <a href={gcal(plan.title, plan.vibe, when, plan.stops)} target="_blank" rel="noreferrer"
+        <a href={gcal(find, plan.title, plan.vibe, when, plan.stops)} target="_blank" rel="noreferrer"
           className="flex min-h-12 items-center justify-center rounded-2xl pop press bg-secondary font-bold text-secondary-foreground">Google Calendar</a>
         <button onClick={cal} className="min-h-12 rounded-2xl pop press bg-card font-bold">Apple / Outlook</button>
       </div>

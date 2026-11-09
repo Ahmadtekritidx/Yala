@@ -21,14 +21,18 @@ function Row({ label, ok, detail }: { label: string; ok: boolean; detail?: strin
 
 function StatusPage() {
   const run = useServerFn(checkStatus);
-  const [s, setS] = useState<S | null>(null);
-  const [err, setErr] = useState("");
-  useEffect(() => { run().then(setS).catch((e) => setErr(String(e))); }, []);
+  // checking ─▶ ready | failed
+  const [check, setCheck] = useState<{ status: "checking" } | { status: "ready"; data: S } | { status: "failed"; error: string }>({ status: "checking" });
+  useEffect(() => {
+    run().then((data) => setCheck({ status: "ready", data }), (e) => setCheck({ status: "failed", error: String(e) }));
+  }, [run]);
+  const s = check.status === "ready" ? check.data : null;
+  const err = check.status === "failed" ? check.error : "";
   return (
     <main className="mx-auto min-h-screen max-w-xl px-5 pb-20 pt-8">
       <Link to="/" className="font-display text-2xl font-extrabold tracking-tight">yalla<span className="text-primary">.</span></Link>
       <h1 className="mt-8 font-display text-3xl font-bold">System status</h1>
-      {!s && !err && <p className="mt-6 text-muted-foreground">Running a live Google Places search...</p>}
+      {check.status === "checking" && <p className="mt-6 text-muted-foreground">Running a live Google Places search...</p>}
       {err && <p className="mt-6 text-destructive">{err}</p>}
       {s && (
         <ul className="mt-6 space-y-3">

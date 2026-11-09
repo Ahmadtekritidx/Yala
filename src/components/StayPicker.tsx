@@ -1,24 +1,23 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { searchStays } from "@/lib/city.functions";
 import type { Base } from "@/lib/city";
+import { searchItems, useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 // "Where are you staying?": a hotel, an Airbnb street or a neighbourhood. Optional.
 export function StayPicker({ base, near, onChange }: { base: Base | null; near: { lat: number; lng: number }; onChange: (b: Base | null) => void }) {
   const search = useServerFn(searchStays);
   const [q, setQ] = useState("");
-  const [list, setList] = useState<{ name: string; address: string; lat: number; lng: number }[]>([]);
-  const [msg, setMsg] = useState("");
-
-  useEffect(() => {
-    if (q.trim().length < 2) { setList([]); setMsg(""); return; }
-    const t = setTimeout(() => {
-      search({ data: { q: q.trim(), lat: near.lat, lng: near.lng } })
-        .then((r) => { setList(r.stays); setMsg(r.stays.length ? "" : "Nothing found. Try the hotel name or the area."); })
-        .catch(() => setMsg("Search is not available right now."));
-    }, 350);
-    return () => clearTimeout(t);
-  }, [q, near.lat, near.lng, search]);
+  const found = useDebouncedSearch(
+    q,
+    (query) => search({ data: { q: query, lat: near.lat, lng: near.lng } }).then((r) => r.stays),
+    `${near.lat},${near.lng}`,
+  );
+  const list = searchItems(found);
+  const msg =
+    found.status === "failed" ? "Search is not available right now."
+    : found.status === "done" && !found.items.length ? "Nothing found. Try the hotel name or the area."
+    : "";
 
   if (base) {
     return (
@@ -38,7 +37,7 @@ export function StayPicker({ base, near, onChange }: { base: Base | null; near: 
         <ul className="mt-2 rounded-2xl pop bg-card p-1">
           {list.map((s) => (
             <li key={`${s.name}-${s.lat}`}>
-              <button type="button" onClick={() => { onChange({ name: s.name, lat: s.lat, lng: s.lng }); setQ(""); setList([]); }}
+              <button type="button" onClick={() => { onChange({ name: s.name, lat: s.lat, lng: s.lng }); setQ(""); }}
                 className="flex min-h-11 w-full flex-col items-start rounded-xl px-3 py-2 text-left hover:bg-background">
                 <span className="text-sm font-bold">{s.name}</span>
                 <span className="text-xs text-muted-foreground">{s.address}</span>

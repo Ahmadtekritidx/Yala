@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { encodePlan, encodeTrip, saveRecent } from "@/lib/share";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { z } from "zod";
 import { generatePlans, type Plan, type Stop } from "@/lib/plans.functions";
+import { initialPlansState, NOT_EDITING, plansReducer } from "@/lib/plans-state";
 import { allPlaces, registerPlaces, CATEGORIES, byId, driveMins, fmt, type Category, type Place } from "@/lib/places";
 import { hoursOn, openAt } from "@/lib/hours";
 import { VibeStrip } from "@/components/VibeStrip";
@@ -66,16 +67,16 @@ function PlansPage() {
   const s = Route.useSearch();
   const gen = useServerFn(generatePlans);
   const navigate = useNavigate();
-  const [plans, setPlans] = useState<Plan[] | null>(null);
-  const [error, setError] = useState("");
+  // Loading, failed or ready, plus what is being edited and the undo toast: see src/lib/plans-state.ts.
+  const [state, dispatch] = useReducer(plansReducer, initialPlansState);
+  const plans = state.status === "ready" ? state.plans : null;
+  const error = state.status === "failed" ? state.error : "";
+  const editing = state.status === "ready" ? state.editing : NOT_EDITING;
+  const undo = state.status === "ready" ? state.undo : null;
   const [n, setN] = useState(0);
+  const lastRun = useRef(0);
   const [msg, setMsg] = useState(0);
-  const [swap, setSwap] = useState<{ p: number; i: number } | null>(null);
-  const [adding, setAdding] = useState<number | null>(null);
-  const [undo, setUndo] = useState<{ prev: Plan[] } | null>(null);
-  const [noAdd, setNoAdd] = useState("");
   const [mySaves, setMySaves] = useState<Saved[]>([]);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const tripDays = Number(s.days) > 1 ? Number(s.days) : 0;
   const cityName = decodeCity(s.city)?.name;
@@ -85,19 +86,34 @@ function PlansPage() {
   useEffect(() => { if (plans) writeCache(key, plans); }, [plans, key]);
 
   useEffect(() => {
-    setPlans(null); setError("");
+    const run = ++lastRun.current;
+    dispatch({ type: "load", run });
+    setMsg(0);
     const saves = loadSaved();
     setMySaves(saves);
     const hit = n === 0 ? readCache(key) : null;
-    if (hit) { registerPlaces(hit.places); setPlans(hit.plans); return; }
+    if (hit) { registerPlaces(hit.places); dispatch({ type: "loaded", run, plans: hit.plans }); return; }
     const savedInput = s.saved === "1" ? saves.slice(0, 15).map((x) => ({ ...x.place, hours: undefined, isNew: undefined, dish: x.dish })) : [];
     const iv = setInterval(() => setMsg((m) => (m + 1) % LOADING.length), 1400);
     gen({ data: { q: s.q, what: s.what ? s.what.split(",") : [], where: s.where ? s.where.split(",") : [], day: s.day, time: s.time, end: s.end || undefined, people: s.people, pace: s.pace, avoid: s.avoid ? s.avoid.split(",") : [], prefs: s.prefs ? s.prefs.split(",") : [], stay: s.stay, budget: Number(s.budget) || 0, maxDrive: Number(s.drive) || 30, saved: savedInput, days: Math.min(7, Math.max(1, Number(s.days) || 1)), ...(decodeBase(s.base) ? { base: decodeBase(s.base)! } : {}), ...(/^\d{4}-\d{2}-\d{2}$/.test(s.start) ? { start: s.start } : {}), ...(() => { const c = decodeCity(s.city); return c && !isLebanon(c) ? { city: c } : {}; })() } })
-      .then((r) => { if ("error" in r && r.error) return setError(r.error); if (r.places) registerPlaces(r.places); setPlans(r.plans!); })
-      .catch(() => setError("Something broke on our side. Try again?"))
+      .then((r) => {
+        if ("error" in r && r.error) return dispatch({ type: "failed", run, error: r.error });
+        // An answer for a request the user already moved on from: drop it, places included.
+        if (run !== lastRun.current) return;
+        if (r.places) registerPlaces(r.places);
+        dispatch({ type: "loaded", run, plans: r.plans! });
+      })
+      .catch(() => dispatch({ type: "failed", run, error: "Something broke on our side. Try again?" }))
       .finally(() => clearInterval(iv));
     return () => clearInterval(iv);
   }, [key, n]);
+
+  // The "Stop removed · Undo" toast lasts 5 seconds after the latest removal.
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => dispatch({ type: "undoExpired" }), 5000);
+    return () => clearTimeout(t);
+  }, [undo]);
 
   const retime = (stops: Stop[], start: number): Stop[] => {
     let t = start;
@@ -107,27 +123,24 @@ function PlansPage() {
     });
   };
 
-  const update = (p: number, stops: Stop[]) => setPlans((ps) => ps!.map((x, k) => (k === p ? { ...x, stops } : x)));
+  // The plans with plan p's stops replaced (and re-timed from its first stop).
+  const withStops = (ps: Plan[], p: number, stops: Stop[]) =>
+    ps.map((x, k) => (k === p ? { ...x, stops: retime(stops, ps[p]!.stops[0]!.time) } : x));
 
   const remove = (p: number, i: number) => {
-    const plan = plans![p]!;
-    const stops = plan.stops.filter((_, k) => k !== i);
-    setUndo({ prev: plans! });
-    update(p, retime(stops, plan.stops[0]!.time));
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setUndo(null), 5000);
+    if (!plans) return;
+    dispatch({ type: "remove", plans: withStops(plans, p, plans[p]!.stops.filter((_, k) => k !== i)) });
   };
 
   const add = (p: number, cat: Category) => {
-    const plan = plans![p]!;
+    if (!plans) return;
+    const plan = plans[p]!;
     const last = byId(plan.stops.at(-1)!.placeId)!;
-    const used = new Set(plans!.flatMap((x) => x.stops.map((st) => st.placeId)));
+    const used = new Set(plans.flatMap((x) => x.stops.map((st) => st.placeId)));
     const pick = allPlaces().filter((x) => x.cat === cat && !used.has(x.id) && driveMins(last, x) <= 45)
       .sort((a, b) => driveMins(last, a) - driveMins(last, b) || b.rating - a.rating)[0];
-    if (!pick) { setNoAdd(cat); setAdding(null); return; }
-    setNoAdd("");
-    update(p, retime([...plan.stops, { placeId: pick.id, reason: pick.reason, time: 0 }], plan.stops[0]!.time));
-    setAdding(null);
+    if (!pick) return dispatch({ type: "edit", editing: { kind: "addFailed", plan: p, cat } });
+    dispatch({ type: "change", plans: withStops(plans, p, [...plan.stops, { placeId: pick.id, reason: pick.reason, time: 0 }]) });
   };
 
   return (
@@ -199,7 +212,7 @@ function PlansPage() {
                             <VibeStrip place={pl} />
                           </div>
                           <div className="flex shrink-0 gap-1">
-                            <button aria-label="Swap" onClick={() => setSwap({ p, i })} className="grid h-11 w-11 place-items-center rounded-full border border-border hover:border-primary">⇄</button>
+                            <button aria-label="Swap" onClick={() => dispatch({ type: "edit", editing: { kind: "swap", plan: p, stop: i } })} className="grid h-11 w-11 place-items-center rounded-full border border-border hover:border-primary">⇄</button>
                             <button aria-label="Remove" disabled={plan.stops.length <= 1} onClick={() => remove(p, i)} className="grid h-11 w-11 place-items-center rounded-full border border-border hover:border-primary disabled:opacity-30">✕</button>
                           </div>
                         </div>
@@ -208,16 +221,16 @@ function PlansPage() {
                   })}
                 </ol>
                 {plan.base && lastPlace && <p className="mt-2 pl-16 text-xs text-muted-foreground">↩ {driveMins(lastPlace, plan.base)} min back to {plan.base.name}</p>}
-                {adding === p ? (
+                {editing.kind === "add" && editing.plan === p ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {CATEGORIES.map((c) => (
                       <button key={c} onClick={() => add(p, c)} className="min-h-11 rounded-full border border-border px-3 text-sm hover:border-primary">{c}</button>
                     ))}
                   </div>
                 ) : (
-                  <button onClick={() => setAdding(p)} className="mt-4 min-h-11 text-sm font-bold text-primary">+ add a stop</button>
+                  <button onClick={() => dispatch({ type: "edit", editing: { kind: "add", plan: p } })} className="mt-4 min-h-11 text-sm font-bold text-primary">+ add a stop</button>
                 )}
-                {noAdd && adding === null && <p className="text-xs text-muted-foreground">No {noAdd.toLowerCase()} spot within 45 min of the last stop.</p>}
+                {editing.kind === "addFailed" && editing.plan === p && <p className="text-xs text-muted-foreground">No {editing.cat.toLowerCase()} spot within 45 min of the last stop.</p>}
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
                   <p className="text-sm text-muted-foreground">{Math.round(total / 30) / 2}h{lastPlace?.cat === "Stay" ? " + overnight" : ""} · ~${cost}/person{Number(s.people) > 1 ? ` · ~$${cost * Number(s.people)} for ${s.people}` : ""}</p>
                   <button className="min-h-11 rounded-xl pop press bg-primary px-5 font-bold text-primary-foreground" onClick={() => { const code = tripDays ? encodeTrip(plans.map((x) => ({ ...x, day: x.day ?? s.day }))) : encodePlan({ ...plan, day: s.day }); saveRecent(code, tripDays ? `${tripDays} days${cityName ? ` in ${cityName}` : ""}` : plan.title); navigate({ to: "/p/$code", params: { code } }); }}>{tripDays ? "Open the trip" : "Pick this plan"}</button>
@@ -228,17 +241,15 @@ function PlansPage() {
         </div>
       )}
 
-      {swap && plans && <SwapSheet plans={plans} at={swap} onClose={() => setSwap(null)} onPick={(id) => {
-        const plan = plans[swap.p]!;
-        const stops = plan.stops.map((st, k) => (k === swap.i ? { ...st, placeId: id, reason: byId(id)!.reason } : st));
-        update(swap.p, retime(stops, plan.stops[0]!.time));
-        setSwap(null);
+      {editing.kind === "swap" && plans && <SwapSheet plans={plans} at={{ p: editing.plan, i: editing.stop }} onClose={() => dispatch({ type: "edit", editing: NOT_EDITING })} onPick={(id) => {
+        const stops = plans[editing.plan]!.stops.map((st, k) => (k === editing.stop ? { ...st, placeId: id, reason: byId(id)!.reason } : st));
+        dispatch({ type: "change", plans: withStops(plans, editing.plan, stops) });
       }} />}
 
       {undo && (
         <div className="fixed inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-4 rounded-full bg-foreground px-5 py-3 text-sm text-background shadow-lg">
           Stop removed
-          <button className="font-bold text-primary" onClick={() => { setPlans(undo.prev); setUndo(null); }}>Undo</button>
+          <button className="font-bold text-primary" onClick={() => dispatch({ type: "undo" })}>Undo</button>
         </div>
       )}
     </main>

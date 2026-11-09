@@ -13,7 +13,13 @@ node tests/world.e2e.cjs
 node tests/trip.e2e.cjs
 # opening-hours parser
 bun tests/hours.test.ts
+# the /plans page state machine (loading/failed/ready, edit mode, undo, stale answers)
+node --experimental-strip-types tests/plans-state.test.ts
 ```
+
+UI state that has more than two states lives in one explicit machine, not in loose `useState` flags:
+the plans page in `src/lib/plans-state.ts` (a pure reducer, unit tested above), and the city and hotel
+search boxes in `src/hooks/use-debounced-search.ts`. Add new states there, not as another flag.
 
 Add `MOCK_GOOGLE_FAIL=1` to step 1 to simulate a broken Google key: plans must still appear (built-in places) and `/status` must show the error.
 

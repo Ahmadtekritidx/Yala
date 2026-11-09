@@ -9,6 +9,8 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 export default defineConfig({
   // Hosted on Vercel: build Vercel serverless output there (Vercel sets VERCEL=1 during builds).
   nitro: process.env["VERCEL"] ? { preset: "vercel" } : {},
+  // Tells the server which proxy header carries the real visitor IP (src/lib/limit.server.ts).
+  vite: { define: { __VERCEL__: JSON.stringify(!!process.env["VERCEL"]) } },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
