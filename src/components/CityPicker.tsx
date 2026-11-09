@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { cityFromLocation, searchCities } from "@/lib/city.functions";
 import { cityLabel, LEBANON, recentCities, type City } from "@/lib/city";
+import { searchItems, useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 const POPULAR: City[] = [
   LEBANON,
@@ -20,9 +21,17 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
   const near = useServerFn(cityFromLocation);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<City[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  // Google city search for what's typed: idle, searching, done or failed.
+  const found = useDebouncedSearch(q, (query) => search({ data: { q: query } }).then((r) => r.cities));
+  const results = searchItems(found);
+  // "Use my location": idle, asking the browser and Google, or failed with a reason to show.
+  const [locating, setLocating] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "failed"; msg: string }>({ kind: "idle" });
+  const busy = locating.kind === "busy";
+  const msg =
+    locating.kind === "failed" ? locating.msg
+    : found.status === "failed" ? "Search is not available right now."
+    : found.status === "done" && !found.items.length ? "No city found. Try the English name."
+    : "";
   const input = useRef<HTMLInputElement>(null);
 
   const [recent, setRecent] = useState<City[]>([]);
@@ -39,54 +48,31 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
       ? [...recent, ...POPULAR.filter((c) => !recent.some((r) => same(r, c)))]
       : [];
 
-  // Debounced Google city search
-  useEffect(() => {
-    if (q.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    const t = setTimeout(() => {
-      search({ data: { q: q.trim() } })
-        .then((r) => {
-          setResults(r.cities);
-          setMsg(r.cities.length ? "" : "No city found. Try the English name.");
-        })
-        .catch(() => setMsg("Search is not available right now."));
-    }, 350);
-    return () => clearTimeout(t);
-  }, [q, search]);
-
   const pick = (c: City) => {
     onChange(c);
     setOpen(false);
     setQ("");
-    setResults([]);
-    setMsg("");
+    setLocating({ kind: "idle" });
   };
 
   const locate = () => {
     if (!navigator.geolocation) {
-      setMsg("Your browser can't share location.");
+      setLocating({ kind: "failed", msg: "Your browser can't share location." });
       return;
     }
-    setBusy(true);
-    setMsg("");
+    setLocating({ kind: "busy" });
+    const unknown = { kind: "failed", msg: "Couldn't tell which city you're in. Search it instead." } as const;
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
           const r = await near({ data: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
           if (r.city) pick(r.city);
-          else setMsg("Couldn't tell which city you're in. Search it instead.");
+          else setLocating(unknown);
         } catch {
-          setMsg("Couldn't tell which city you're in. Search it instead.");
-        } finally {
-          setBusy(false);
+          setLocating(unknown);
         }
       },
-      () => {
-        setBusy(false);
-        setMsg("Location is off. Search your city instead.");
-      },
+      () => setLocating({ kind: "failed", msg: "Location is off. Search your city instead." }),
       { timeout: 10000, maximumAge: 600000 },
     );
   };
@@ -107,7 +93,10 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
           <input
             ref={input}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              setQ(e.target.value);
+              if (locating.kind === "failed") setLocating({ kind: "idle" });
+            }}
             placeholder="Search any city: Riyadh, Dubai, London…"
             className="min-h-12 w-full rounded-xl border border-border bg-background px-4 text-base outline-none focus:border-primary"
           />
