@@ -111,6 +111,9 @@ async function search(
       : `${area}, ${geo.country}`
     : `${area}, Lebanon`;
   const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${where}`;
+  // Places Google returns for "vegan lunch in Batroun" are the ones we know fit that diet (Swap/Add rely on it).
+  const dietTag =
+    MEALS.has(cat) && diet && new RegExp(`\\b${diet}\\b`, "i").test(text) ? diet : undefined;
   const hit = cache.get(text + day);
   if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.v;
   const res = await fetch(PLACES_URL, {
@@ -169,6 +172,7 @@ async function search(
       hours: p.regularOpeningHours?.weekdayDescriptions?.[dayIdx]?.replace(/^\w+:\s*/, ""),
       week: p.regularOpeningHours?.weekdayDescriptions?.map((d) => d.replace(/^\w+:\s*/, "")),
       live: true,
+      ...(dietTag ? { diet: dietTag } : {}),
     }));
   cache.set(text + day, { at: Date.now(), v });
   return v;
@@ -201,10 +205,14 @@ export async function livePlaces(opts: {
       ),
     ),
   );
-  const seen = new Set<string>();
-  return (await Promise.all(jobs.slice(0, 18)))
-    .flat()
-    .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  // One entry per place; keep the diet tag if any of the searches that found it had one.
+  const found = new Map<string, Place>();
+  for (const p of (await Promise.all(jobs.slice(0, 18))).flat()) {
+    const had = found.get(p.id);
+    if (!had) found.set(p.id, p);
+    else if (p.diet && !had.diet) found.set(p.id, { ...had, diet: p.diet });
+  }
+  return [...found.values()];
 }
 
 // Find each place's real Instagram account via web search (best effort, short timeout).
