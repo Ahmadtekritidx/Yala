@@ -22,16 +22,23 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   // Google city search for what's typed: idle, searching, done or failed.
-  const found = useDebouncedSearch(q, (query) => search({ data: { q: query } }).then((r) => r.cities));
+  const found = useDebouncedSearch(q, (query) =>
+    search({ data: { q: query } }).then((r) => r.cities),
+  );
   const results = searchItems(found);
   // "Use my location": idle, asking the browser and Google, or failed with a reason to show.
-  const [locating, setLocating] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "failed"; msg: string }>({ kind: "idle" });
+  const [locating, setLocating] = useState<
+    { kind: "idle" } | { kind: "busy" } | { kind: "failed"; msg: string }
+  >({ kind: "idle" });
   const busy = locating.kind === "busy";
   const msg =
-    locating.kind === "failed" ? locating.msg
-    : found.status === "failed" ? "Search is not available right now."
-    : found.status === "done" && !found.items.length ? "No city found. Try the English name."
-    : "";
+    locating.kind === "failed"
+      ? locating.msg
+      : found.status === "failed"
+        ? "Search is not available right now."
+        : found.status === "done" && !found.items.length
+          ? "No city found. Try the English name."
+          : "";
   const input = useRef<HTMLInputElement>(null);
 
   const [recent, setRecent] = useState<City[]>([]);
@@ -61,7 +68,10 @@ export function CityPicker({ city, onChange }: { city: City; onChange: (c: City)
       return;
     }
     setLocating({ kind: "busy" });
-    const unknown = { kind: "failed", msg: "Couldn't tell which city you're in. Search it instead." } as const;
+    const unknown = {
+      kind: "failed",
+      msg: "Couldn't tell which city you're in. Search it instead.",
+    } as const;
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {

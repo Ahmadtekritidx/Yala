@@ -4,12 +4,14 @@
 // [] when closed, or null when unknown.
 export function parseHours(h: string | undefined): [number, number][] | null {
   if (!h) return null;
-  const s = h.replace(/[   ]/g, " ").trim();
+  const s = h.replace(/[\u202f\u2009\u00a0]/g, " ").trim();
   if (/closed/i.test(s)) return [];
   if (/24 hours/i.test(s)) return [[0, 1440]];
   const out: [number, number][] = [];
   for (const part of s.split(",")) {
-    const m = part.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\s*[–-]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+    const m = part.match(
+      /(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?\s*[–-]\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i,
+    );
     if (!m) continue;
     const endAp = m[6]?.toUpperCase();
     const startAp = m[3]?.toUpperCase() ?? endAp;
@@ -39,9 +41,19 @@ export function openAt(h: string | undefined, start: number, mins: number) {
   return r.some(([a, b]) => start >= a && start + need <= b);
 }
 
-export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+export const WEEKDAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 // Hours on a given weekday: the full week when we have it, else the one day we fetched.
-export const hoursOn = (p: { hours?: string | undefined; week?: string[] | undefined }, day: string) =>
-  p.week?.[WEEKDAYS.indexOf(day)] ?? p.hours;
+export const hoursOn = (
+  p: { hours?: string | undefined; week?: string[] | undefined },
+  day: string,
+) => p.week?.[WEEKDAYS.indexOf(day)] ?? p.hours;
 
 export const closedToday = (h: string | undefined) => parseHours(h)?.length === 0;

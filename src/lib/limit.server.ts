@@ -21,9 +21,11 @@ const buckets = new Map<string, Map<string, number[]>>();
 export function rateLimit(bucket: string, limit: number, windowMs: number): number {
   let hits = buckets.get(bucket);
   if (!hits) buckets.set(bucket, (hits = new Map()));
-  const ip = clientIp(), now = Date.now();
+  const ip = clientIp(),
+    now = Date.now();
   const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
-  if (recent.length >= limit) return Math.max(1, Math.ceil((windowMs - (now - recent[0]!)) / 60000));
+  if (recent.length >= limit)
+    return Math.max(1, Math.ceil((windowMs - (now - recent[0]!)) / 60000));
   recent.push(now);
   // Re-insert so the map stays ordered from least to most recently seen.
   hits.delete(ip);
@@ -31,7 +33,10 @@ export function rateLimit(bucket: string, limit: number, windowMs: number): numb
   if (hits.size > MAX_IPS) {
     for (const [k, ts] of hits) if (!ts.some((t) => now - t < windowMs)) hits.delete(k);
     // Still full: forget the visitors seen longest ago, never everyone at once.
-    for (const k of hits.keys()) { if (hits.size <= MAX_IPS * 0.8) break; hits.delete(k); }
+    for (const k of hits.keys()) {
+      if (hits.size <= MAX_IPS * 0.8) break;
+      hits.delete(k);
+    }
   }
   return 0;
 }

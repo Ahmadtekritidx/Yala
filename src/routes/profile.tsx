@@ -2,7 +2,17 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CityPicker } from "@/components/CityPicker";
 import { isLebanon, LEBANON, loadCity, saveCity, type City } from "@/lib/city";
-import { AREAS, AVOIDS, DIETS, EMPTY, LIKES, STAYS, loadProfile, saveProfile, type Profile } from "@/lib/profile";
+import {
+  AREAS,
+  AVOIDS,
+  DIETS,
+  EMPTY,
+  LIKES,
+  STAYS,
+  loadProfile,
+  saveProfile,
+  type Profile,
+} from "@/lib/profile";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -21,7 +31,9 @@ function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () 
       onClick={onClick}
       aria-pressed={on}
       className={`min-h-11 shrink-0 rounded-full border-2 px-4 text-sm font-medium transition ${
-        on ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:border-primary/60"
+        on
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-foreground hover:border-primary/60"
       }`}
     >
       {label}
@@ -29,7 +41,15 @@ function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () 
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="mt-8">
       <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{title}</p>
@@ -45,9 +65,16 @@ function ProfilePage() {
   const navigate = useNavigate();
 
   const [city, setCity] = useState<City>(LEBANON);
-  useEffect(() => { const x = loadProfile(); if (x) setP(x); setCity(loadCity()); }, []);
+  useEffect(() => {
+    const x = loadProfile();
+    if (x) setP(x);
+    setCity(loadCity());
+  }, []);
 
-  const set = <K extends keyof Profile>(k: K, v: Profile[K]) => { setP((o) => ({ ...o, [k]: v })); setSaved(false); };
+  const set = <K extends keyof Profile>(k: K, v: Profile[K]) => {
+    setP((o) => ({ ...o, [k]: v }));
+    setSaved(false);
+  };
   const toggle = (k: "diet" | "likes" | "avoid", v: string) =>
     set(k, p[k].includes(v) ? p[k].filter((x) => x !== v) : [...p[k], v]);
 
@@ -62,66 +89,153 @@ function ProfilePage() {
   return (
     <main className="mx-auto min-h-screen max-w-xl px-5 pb-24 pt-8">
       <div className="flex items-center justify-between">
-        <Link to="/" className="font-display text-2xl font-extrabold tracking-tight">yalla<span className="text-primary">.</span></Link>
-        <Link to="/" className="min-h-11 rounded-full pop press bg-card px-4 py-2.5 text-sm font-medium">← Back</Link>
+        <Link to="/" className="font-display text-2xl font-extrabold tracking-tight">
+          yalla<span className="text-primary">.</span>
+        </Link>
+        <Link
+          to="/"
+          className="min-h-11 rounded-full pop press bg-card px-4 py-2.5 text-sm font-medium"
+        >
+          ← Back
+        </Link>
       </div>
       <h1 className="mt-8 font-display text-4xl font-extrabold leading-tight">Your preferences</h1>
-      <p className="mt-2 text-muted-foreground">Tell us once. Every plan fits you. Saved on this phone only.</p>
+      <p className="mt-2 text-muted-foreground">
+        Tell us once. Every plan fits you. Saved on this phone only.
+      </p>
 
       <section className="mt-8">
-        <label htmlFor="name" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Your name</label>
-        <input id="name" value={p.name} maxLength={30} onChange={(e) => set("name", e.target.value)} placeholder="Optional"
-          className="mt-3 min-h-12 w-full rounded-2xl pop bg-card px-4 text-base outline-none focus:ring-2 focus:ring-ring/30" />
+        <label
+          htmlFor="name"
+          className="text-xs font-bold uppercase tracking-widest text-muted-foreground"
+        >
+          Your name
+        </label>
+        <input
+          id="name"
+          value={p.name}
+          maxLength={30}
+          onChange={(e) => set("name", e.target.value)}
+          placeholder="Optional"
+          className="mt-3 min-h-12 w-full rounded-2xl pop bg-card px-4 text-base outline-none focus:ring-2 focus:ring-ring/30"
+        />
       </section>
 
       <Section title="Home city" hint="Anywhere in the world. We plan around here by default.">
-        <CityPicker city={city} onChange={(c) => { setCity(c); setSaved(false); if (!isLebanon(c)) set("homeArea", ""); }} />
-        {isLebanon(city) && AREAS.map((a) => <Chip key={a} label={a} on={p.homeArea === a} onClick={() => set("homeArea", p.homeArea === a ? "" : a)} />)}
+        <CityPicker
+          city={city}
+          onChange={(c) => {
+            setCity(c);
+            setSaved(false);
+            if (!isLebanon(c)) set("homeArea", "");
+          }}
+        />
+        {isLebanon(city) &&
+          AREAS.map((a) => (
+            <Chip
+              key={a}
+              label={a}
+              on={p.homeArea === a}
+              onClick={() => set("homeArea", p.homeArea === a ? "" : a)}
+            />
+          ))}
       </Section>
 
       <Section title="Usually going out as">
-        {[["1", "Solo"], ["2", "Couple"], ["4", "Small group"], ["8", "Big group"]].map(([v, l]) => (
-          <Chip key={v} label={`${l} (${v})`} on={p.people === v} onClick={() => set("people", v!)} />
+        {[
+          ["1", "Solo"],
+          ["2", "Couple"],
+          ["4", "Small group"],
+          ["8", "Big group"],
+        ].map(([v, l]) => (
+          <Chip
+            key={v}
+            label={`${l} (${v})`}
+            on={p.people === v}
+            onClick={() => set("people", v!)}
+          />
         ))}
       </Section>
 
       <Section title="Budget per person">
-        {([[0, "Any"], [1, "$ Cheap"], [2, "$$ Mid"], [3, "$$$ Fancy"]] as const).map(([v, l]) => (
+        {(
+          [
+            [0, "Any"],
+            [1, "$ Cheap"],
+            [2, "$$ Mid"],
+            [3, "$$$ Fancy"],
+          ] as const
+        ).map(([v, l]) => (
           <Chip key={v} label={l} on={p.budget === v} onClick={() => set("budget", v)} />
         ))}
       </Section>
 
       <Section title="Pace">
-        <Chip label="Chill (2 to 3 stops)" on={p.pace === "Chill"} onClick={() => set("pace", "Chill")} />
-        <Chip label="Packed (3 to 4 stops)" on={p.pace === "Packed"} onClick={() => set("pace", "Packed")} />
+        <Chip
+          label="Chill (2 to 3 stops)"
+          on={p.pace === "Chill"}
+          onClick={() => set("pace", "Chill")}
+        />
+        <Chip
+          label="Packed (3 to 4 stops)"
+          on={p.pace === "Packed"}
+          onClick={() => set("pace", "Packed")}
+        />
       </Section>
 
       <Section title="Max drive between stops">
-        {[15, 30, 45, 60].map((m) => <Chip key={m} label={`${m} min`} on={p.maxDrive === m} onClick={() => set("maxDrive", m)} />)}
+        {[15, 30, 45, 60].map((m) => (
+          <Chip
+            key={m}
+            label={`${m} min`}
+            on={p.maxDrive === m}
+            onClick={() => set("maxDrive", m)}
+          />
+        ))}
       </Section>
 
       <Section title="Food">
-        {DIETS.map((d) => <Chip key={d} label={d} on={p.diet.includes(d)} onClick={() => toggle("diet", d)} />)}
+        {DIETS.map((d) => (
+          <Chip key={d} label={d} on={p.diet.includes(d)} onClick={() => toggle("diet", d)} />
+        ))}
       </Section>
 
       <Section title="You love">
-        {LIKES.map((d) => <Chip key={d} label={d} on={p.likes.includes(d)} onClick={() => toggle("likes", d)} />)}
+        {LIKES.map((d) => (
+          <Chip key={d} label={d} on={p.likes.includes(d)} onClick={() => toggle("likes", d)} />
+        ))}
       </Section>
 
       <Section title="Not into" hint="We never put these in your plans.">
-        {AVOIDS.map((d) => <Chip key={d} label={d} on={p.avoid.includes(d)} onClick={() => toggle("avoid", d)} />)}
+        {AVOIDS.map((d) => (
+          <Chip key={d} label={d} on={p.avoid.includes(d)} onClick={() => toggle("avoid", d)} />
+        ))}
       </Section>
 
       <Section title="Stay overnight?">
-        {STAYS.map((d) => <Chip key={d} label={d} on={p.stay === d} onClick={() => set("stay", d)} />)}
+        {STAYS.map((d) => (
+          <Chip key={d} label={d} on={p.stay === d} onClick={() => set("stay", d)} />
+        ))}
       </Section>
 
-      <button type="button" onClick={save}
-        className="mt-12 min-h-14 w-full rounded-2xl pop press bg-primary font-display text-lg font-bold text-primary-foreground">
+      <button
+        type="button"
+        onClick={save}
+        className="mt-12 min-h-14 w-full rounded-2xl pop press bg-primary font-display text-lg font-bold text-primary-foreground"
+      >
         {saved ? "Saved ✓" : "Save preferences"}
       </button>
-      <button type="button" onClick={() => { setP(EMPTY); saveProfile(EMPTY); setSaved(false); }}
-        className="mt-3 min-h-11 w-full text-sm font-bold text-muted-foreground underline">Reset</button>
+      <button
+        type="button"
+        onClick={() => {
+          setP(EMPTY);
+          saveProfile(EMPTY);
+          setSaved(false);
+        }}
+        className="mt-3 min-h-11 w-full text-sm font-bold text-muted-foreground underline"
+      >
+        Reset
+      </button>
     </main>
   );
 }

@@ -49,7 +49,13 @@ export function plansReducer(state: PlansState, event: PlansEvent): PlansState {
       return { status: "loading", run: event.run };
     case "loaded":
       if (event.run !== state.run) return state;
-      return { status: "ready", run: event.run, plans: event.plans, editing: NOT_EDITING, undo: null };
+      return {
+        status: "ready",
+        run: event.run,
+        plans: event.plans,
+        editing: NOT_EDITING,
+        undo: null,
+      };
     case "failed":
       if (event.run !== state.run) return state;
       return { status: "failed", run: event.run, error: event.error };

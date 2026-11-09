@@ -11,10 +11,16 @@ export type SearchState<T> =
   | { status: "done"; items: T[] }
   | { status: "failed" };
 
-export const searchItems = <T,>(s: SearchState<T>): T[] => (s.status === "searching" || s.status === "done" ? s.items : []);
+export const searchItems = <T>(s: SearchState<T>): T[] =>
+  s.status === "searching" || s.status === "done" ? s.items : [];
 
 // `scope` is anything else the search depends on (e.g. the city to search near), as a string.
-export function useDebouncedSearch<T>(q: string, fetch: (q: string) => Promise<T[]>, scope = "", delay = 350): SearchState<T> {
+export function useDebouncedSearch<T>(
+  q: string,
+  fetch: (q: string) => Promise<T[]>,
+  scope = "",
+  delay = 350,
+): SearchState<T> {
   const [state, setState] = useState<SearchState<T>>({ status: "idle" });
   const fetchRef = useRef(fetch);
   fetchRef.current = fetch;
@@ -29,8 +35,12 @@ export function useDebouncedSearch<T>(q: string, fetch: (q: string) => Promise<T
     setState((s) => ({ status: "searching", items: searchItems(s) }));
     const t = setTimeout(() => {
       fetchRef.current(query).then(
-        (items) => { if (current) setState({ status: "done", items }); },
-        () => { if (current) setState({ status: "failed" }); },
+        (items) => {
+          if (current) setState({ status: "done", items });
+        },
+        () => {
+          if (current) setState({ status: "failed" });
+        },
       );
     }, delay);
     return () => {

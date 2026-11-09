@@ -24,7 +24,9 @@ async function expand(url: string) {
 // Expands short share links (vm.tiktok.com) to the full URL.
 export const expandLink = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ url: z.string().url() }).parse(d))
-  .handler(async ({ data }) => ({ url: rateLimit("expand", 60, 3600e3) ? data.url : await expand(data.url) }));
+  .handler(async ({ data }) => ({
+    url: rateLimit("expand", 60, 3600e3) ? data.url : await expand(data.url),
+  }));
 
 // Public caption text, no API keys: TikTok and YouTube oEmbed, Instagram page meta tags.
 async function caption(url: string): Promise<string> {
@@ -64,15 +66,26 @@ export type ReelResult =
 
 export const readReel = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
-    z.object({
-      url: z.string().url().max(500),
-      hint: z.string().max(120).default(""),
-      city: z.object({ name: z.string().max(80), country: z.string().max(80), cc: z.string().length(2), lat: z.number(), lng: z.number() }).optional(),
-    }).parse(d),
+    z
+      .object({
+        url: z.string().url().max(500),
+        hint: z.string().max(120).default(""),
+        city: z
+          .object({
+            name: z.string().max(80),
+            country: z.string().max(80),
+            cc: z.string().length(2),
+            lat: z.number(),
+            lng: z.number(),
+          })
+          .optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }): Promise<ReelResult> => {
     if (!aiConfigured()) return { error: "AI not configured" };
-    if (rateLimit("reel", 30, 3600e3)) return { error: "Too many links this hour. Try again later." };
+    if (rateLimit("reel", 30, 3600e3))
+      return { error: "Too many links this hour. Try again later." };
 
     const url = await expand(data.url);
     const text = await caption(url);
@@ -88,11 +101,18 @@ export const readReel = createServerFn({ method: "POST" })
     // and every name here is paid for in the prompt. Hand-picked places first, then the newest live ones.
     const abroad = data.city && !isLebanon(data.city) ? data.city : undefined;
     const center: [number, number] = abroad ? [abroad.lat, abroad.lng] : [33.89, 35.5];
-    const nearby = allPlaces().filter((p) => p.cat !== "Stay" && kmBetween(center, [p.lat, p.lng]) <= (abroad ? 80 : 150));
+    const nearby = allPlaces().filter(
+      (p) => p.cat !== "Stay" && kmBetween(center, [p.lat, p.lng]) <= (abroad ? 80 : 150),
+    );
     const known = [...nearby.filter((p) => !p.live), ...nearby.filter((p) => p.live).reverse()]
       .slice(0, 200)
       .map((p) => ({ id: p.id, name: p.name, area: p.area }));
-    const ai = await askJSON(`You find the ONE real place (anywhere in the world; the user is planning around ${data.city ? `${data.city.name}, ${data.city.country}` : "Lebanon"}) that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town or city, plus country if it is not obvious. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`, `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`, Out, "low");
+    const ai = await askJSON(
+      `You find the ONE real place (anywhere in the world; the user is planning around ${data.city ? `${data.city.name}, ${data.city.country}` : "Lebanon"}) that a social video is about. Reply ONLY JSON: {"placeId":string|null,"name":string|null,"area":string|null,"category":one of ${JSON.stringify(CATEGORIES)}|null,"dish":string|null}. placeId only if it clearly matches a known place. name = the venue's real name (not the creator). area = town or city, plus country if it is not obvious. dish = the one thing to order or do, max 5 words, or null. If no specific place, all null.`,
+      `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`,
+      Out,
+      "low",
+    );
     if (!ai.ok) {
       console.error("readReel", ai.kind, ai.error);
       return { error: "Couldn't find a place in this post. Add the name and try again." };
@@ -100,7 +120,10 @@ export const readReel = createServerFn({ method: "POST" })
     const out = ai.data;
 
     const dish = out.dish ?? undefined;
-    const match = out.placeId && known.some((k) => k.id === out.placeId) ? allPlaces().find((p) => p.id === out.placeId) : undefined;
+    const match =
+      out.placeId && known.some((k) => k.id === out.placeId)
+        ? allPlaces().find((p) => p.id === out.placeId)
+        : undefined;
     if (match) return { place: match, url, dish };
     if (!out.name)
       return { error: "Couldn't find a place in this post. Add the name and try again." };
