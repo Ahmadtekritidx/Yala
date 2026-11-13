@@ -9,7 +9,10 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "for t in tests/hours.test.ts tests/alternatives.test.ts tests/plans-state.test.ts tests/eval-score.test.ts tests/store.test.ts; do node --experimental-strip-types --no-warnings $t || exit 1; done",
+    "eval": "node --experimental-strip-types --no-warnings evals/run.ts",
+    "typecheck": "tsc --noEmit -p ."
   },
   "overrides": {
     "rolldown": "1.2.1"
