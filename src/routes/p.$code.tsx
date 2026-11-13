@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
+import { track } from "@/lib/track";
 import { VibeStrip } from "@/components/VibeStrip";
 import { PlanStory } from "@/components/PlanStory";
 import { byId, fmt, driveMins, registerPlaces, type Place } from "@/lib/places";
@@ -92,7 +93,10 @@ function SharedPlan() {
   const [story, setStory] = useState(false);
   useEffect(() => {
     setHere(window.location.href);
+    if (plan) track("plan_opened", { title: plan.title, stops: plan.stops.length });
     if (new URLSearchParams(window.location.search).get("story") === "1") setStory(true);
+    // Once per page view: the plan comes from the URL and cannot change on this page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!plan) {
@@ -117,6 +121,7 @@ function SharedPlan() {
   });
 
   const share = async (asStory = false) => {
+    track("plan_shared", { story: asStory, title: plan.title });
     const u = new URL(window.location.href);
     if (asStory) u.searchParams.set("story", "1");
     else u.searchParams.delete("story");
@@ -254,6 +259,7 @@ function SharedPlan() {
           .join("%7C")}`}
         target="_blank"
         rel="noreferrer"
+        onClick={() => track("plan_directions", { stops: plan.stops.length })}
         className="mt-12 flex min-h-14 items-center justify-center rounded-2xl pop press bg-accent font-display text-lg font-extrabold text-accent-foreground"
       >
         Open full route in Maps
@@ -266,6 +272,7 @@ function SharedPlan() {
           {copied ? "Link copied ✓" : "Share"}
         </button>
         <a
+          onClick={() => track("plan_whatsapp", { title: plan.title })}
           href={`https://wa.me/?text=${encodeURIComponent(`${plan.title} — ${plan.vibe}\n`)}${encodeURIComponent(here)}`}
           target="_blank"
           rel="noreferrer"
@@ -274,6 +281,7 @@ function SharedPlan() {
           WhatsApp
         </a>
         <a
+          onClick={() => track("plan_calendar", { kind: "google" })}
           href={gcal(find, plan.title, plan.vibe, when, plan.stops)}
           target="_blank"
           rel="noreferrer"
@@ -281,7 +289,13 @@ function SharedPlan() {
         >
           Google Calendar
         </a>
-        <button onClick={cal} className="min-h-12 rounded-2xl pop press bg-card font-bold">
+        <button
+          onClick={() => {
+            track("plan_calendar", { kind: "ics" });
+            cal();
+          }}
+          className="min-h-12 rounded-2xl pop press bg-card font-bold"
+        >
           Apple / Outlook
         </button>
       </div>

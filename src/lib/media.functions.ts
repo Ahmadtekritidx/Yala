@@ -25,7 +25,7 @@ async function expand(url: string) {
 export const expandLink = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ url: z.string().url() }).parse(d))
   .handler(async ({ data }) => ({
-    url: rateLimit("expand", 60, 3600e3) ? data.url : await expand(data.url),
+    url: (await rateLimit("expand", 60, 3600e3)) ? data.url : await expand(data.url),
   }));
 
 // Public caption text, no API keys: TikTok and YouTube oEmbed, Instagram page meta tags.
@@ -84,7 +84,7 @@ export const readReel = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<ReelResult> => {
     if (!aiConfigured()) return { error: "AI not configured" };
-    if (rateLimit("reel", 30, 3600e3))
+    if (await rateLimit("reel", 30, 3600e3))
       return { error: "Too many links this hour. Try again later." };
 
     const url = await expand(data.url);
@@ -112,6 +112,7 @@ export const readReel = createServerFn({ method: "POST" })
       `Link: ${url}\nCaption: ${text || "(none)"}\nUser hint: ${data.hint || "(none)"}\nKnown places: ${JSON.stringify(known)}`,
       Out,
       "low",
+      { feature: "reel", promptVersion: "reel-v1", input: (data.hint || text).slice(0, 300) },
     );
     if (!ai.ok) {
       console.error("readReel", ai.kind, ai.error);

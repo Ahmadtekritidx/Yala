@@ -20,6 +20,7 @@ import { alternatives, arrivalAfter, dietOf, type Rules } from "@/lib/alternativ
 import { VibeStrip } from "@/components/VibeStrip";
 import { decodeBase, decodeCity, isLebanon } from "@/lib/city";
 import { loadSaved, type Saved } from "@/lib/saved";
+import { deviceId, track } from "@/lib/track";
 
 const Search = z.object({
   q: z.coerce.string().optional().default(""),
@@ -45,18 +46,18 @@ const Search = z.object({
 // Keep the last result per request in this tab, so "Edit plan" and back navigation
 // show the same (edited) plans instead of generating new ones.
 const cacheKey = (s: object) => "yalla:plans:" + JSON.stringify(s);
-function readCache(key: string): { plans: Plan[]; places: Place[] } | null {
+function readCache(key: string): { plans: Plan[]; places: Place[]; runId?: string } | null {
   try {
     return JSON.parse(sessionStorage.getItem(key) || "null");
   } catch {
     return null;
   }
 }
-function writeCache(key: string, plans: Plan[]) {
+function writeCache(key: string, plans: Plan[], runId: string | undefined) {
   try {
     const ids = new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)));
     const places = allPlaces().filter((p) => p.live && ids.has(p.id));
-    sessionStorage.setItem(key, JSON.stringify({ plans, places }));
+    sessionStorage.setItem(key, JSON.stringify({ plans, places, runId }));
   } catch {
     /* storage full or blocked: plans just aren't cached */
   }
@@ -96,6 +97,8 @@ function PlansPage() {
   const undo = state.status === "ready" ? state.undo : null;
   const [n, setN] = useState(0);
   const lastRun = useRef(0);
+  // The server's id for the plans on screen, so taps on them join the request in the logs.
+  const runId = useRef<string | undefined>(undefined);
   const [msg, setMsg] = useState(0);
   const [mySaves, setMySaves] = useState<Saved[]>([]);
 
@@ -113,7 +116,7 @@ function PlansPage() {
   const key = cacheKey(s);
 
   useEffect(() => {
-    if (plans) writeCache(key, plans);
+    if (plans) writeCache(key, plans, runId.current);
   }, [plans, key]);
 
   useEffect(() => {
@@ -125,7 +128,9 @@ function PlansPage() {
     const hit = n === 0 ? readCache(key) : null;
     if (hit) {
       registerPlaces(hit.places);
+      runId.current = hit.runId;
       dispatch({ type: "loaded", run, plans: hit.plans });
+      track("plans_shown", { count: hit.plans.length, cached: true }, hit.runId);
       return;
     }
     const savedInput =
@@ -152,6 +157,7 @@ function PlansPage() {
         maxDrive: Number(s.drive) || 30,
         saved: savedInput,
         days: Math.min(7, Math.max(1, Number(s.days) || 1)),
+        device: deviceId(),
         ...(decodeBase(s.base) ? { base: decodeBase(s.base)! } : {}),
         ...(/^\d{4}-\d{2}-\d{2}$/.test(s.start) ? { start: s.start } : {}),
         ...(() => {
@@ -161,11 +167,16 @@ function PlansPage() {
       },
     })
       .then((r) => {
-        if ("error" in r && r.error) return dispatch({ type: "failed", run, error: r.error });
+        if ("error" in r && r.error) {
+          track("plans_error", { error: r.error }, r.runId);
+          return dispatch({ type: "failed", run, error: r.error });
+        }
         // An answer for a request the user already moved on from: drop it, places included.
         if (run !== lastRun.current) return;
         if (r.places) registerPlaces(r.places);
+        runId.current = r.runId;
         dispatch({ type: "loaded", run, plans: r.plans! });
+        track("plans_shown", { count: r.plans!.length, cached: false }, r.runId);
       })
       .catch(() =>
         dispatch({ type: "failed", run, error: "Something broke on our side. Try again?" }),
@@ -206,6 +217,7 @@ function PlansPage() {
 
   const remove = (p: number, i: number) => {
     if (!plans) return;
+    track("stop_removed", { plan: p, stop: i, place: plans[p]!.stops[i]!.placeId }, runId.current);
     dispatch({
       type: "remove",
       plans: withStops(
@@ -229,7 +241,11 @@ function PlansPage() {
       arriveAt: (x) => arrivalAfter(lastStop.time, last, x),
       rules: rulesFor(plan),
     })[0];
-    if (!pick) return dispatch({ type: "edit", editing: { kind: "addFailed", plan: p, cat } });
+    if (!pick) {
+      track("stop_add_failed", { plan: p, cat }, runId.current);
+      return dispatch({ type: "edit", editing: { kind: "addFailed", plan: p, cat } });
+    }
+    track("stop_added", { plan: p, cat, place: pick.id }, runId.current);
     dispatch({
       type: "change",
       plans: withStops(plans, p, [
@@ -249,7 +265,10 @@ function PlansPage() {
           ← {label}
         </Link>
         <button
-          onClick={() => setN((x) => x + 1)}
+          onClick={() => {
+            track("plans_shuffled", { after: error ? "error" : "plans" }, runId.current);
+            setN((x) => x + 1);
+          }}
           disabled={!plans && !error}
           className="min-h-11 shrink-0 rounded-full pop press bg-accent text-accent-foreground px-4 text-sm font-bold text-secondary-foreground disabled:opacity-40"
         >
@@ -262,7 +281,10 @@ function PlansPage() {
           <p className="font-display text-2xl font-bold">Ya jama3a...</p>
           <p className="mt-2 text-muted-foreground">{error}</p>
           <button
-            onClick={() => setN((x) => x + 1)}
+            onClick={() => {
+              track("plans_shuffled", { after: error ? "error" : "plans" }, runId.current);
+              setN((x) => x + 1);
+            }}
             className="mt-6 min-h-12 rounded-2xl pop press bg-primary px-6 font-bold text-primary-foreground"
           >
             Try again
@@ -439,6 +461,11 @@ function PlansPage() {
                   <button
                     className="min-h-11 rounded-xl pop press bg-primary px-5 font-bold text-primary-foreground"
                     onClick={() => {
+                      track(
+                        "plan_picked",
+                        { plan: p, title: plan.title, stops: plan.stops.length },
+                        runId.current,
+                      );
                       const code = tripDays
                         ? encodeTrip(plans.map((x) => ({ ...x, day: x.day ?? s.day })))
                         : encodePlan({ ...plan, day: s.day });
@@ -467,6 +494,16 @@ function PlansPage() {
           rules={rulesFor(plans[editing.plan]!)}
           onClose={() => dispatch({ type: "edit", editing: NOT_EDITING })}
           onPick={(id) => {
+            track(
+              "stop_swapped",
+              {
+                plan: editing.plan,
+                stop: editing.stop,
+                from: plans[editing.plan]!.stops[editing.stop]!.placeId,
+                to: id,
+              },
+              runId.current,
+            );
             const stops = plans[editing.plan]!.stops.map((st, k) =>
               k === editing.stop ? { ...st, placeId: id, reason: byId(id)!.reason } : st,
             );
@@ -478,7 +515,13 @@ function PlansPage() {
       {undo && (
         <div className="fixed inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-4 rounded-full bg-foreground px-5 py-3 text-sm text-background shadow-lg">
           Stop removed
-          <button className="font-bold text-primary" onClick={() => dispatch({ type: "undo" })}>
+          <button
+            className="font-bold text-primary"
+            onClick={() => {
+              track("stop_remove_undone", {}, runId.current);
+              dispatch({ type: "undo" });
+            }}
+          >
             Undo
           </button>
         </div>
