@@ -143,10 +143,10 @@ flowchart LR
 
 Each step is shippable on its own:
 
-1. **Logging** (AI-call log + product events). Nothing else can be measured without it, and the data can't be collected after the fact.
+1. **Logging** (AI-call log + product events). Nothing else can be measured without it, and the data can't be collected after the fact. **Built (November 2026):** see [README](../../README.md#logging-and-shared-limits). It records once the database secrets are set.
 2. ~~**Fix Swap / Add** to use the same hours, budget and diet checks as the planner (F4).~~ Done.
-3. **Parser on Haiku** + run `parser.golden.json` in CI; drive the Google search from the parsed slots (F2).
+3. **Parser on Haiku** + run `parser.golden.json` in CI; drive the Google search from the parsed slots (F2). **The exam runs in CI now** (`npm run eval`). Today's keyword matching scores **15.6%** (5 of 32) with 5 hard fails, which is the floor the AI parser must beat. It also shows a live bug: "no hiking" adds hikes to the search instead of avoiding them (item 23).
 4. **Move reading reels and the status ping to Haiku** (F3).
 5. **Score + plan in code**; the LLM writes copy only. A/B test against the current planner on picked-plan and share rates (F1).
-6. **Shared cache / rate limit** in a real store (F6).
+6. **Shared cache / rate limit** in a real store (F6). **Built:** rate limits, the Google search cache and the Instagram cache use the same database; the Instagram cache in memory is now capped. Still per server: the `LIVE` place registry.
 7. **Ranking model, then recommendations**, once data volume allows (see [data doc](data-and-recommendations.md#4-the-ladder-from-no-data-to-collaborative-filtering)).

@@ -48,7 +48,41 @@ A mobile web app that takes **one input** (text or chips) and returns **3 ready 
 
 ## 4. Success metrics
 
-> TODO: define (e.g. time to first plan, share rate, plans generated per user per week).
+> **Status: proposed targets.** The numbers below are a starting point for the team to agree on, not measured facts. Today's values are unknown until the logging below has run for a few weeks. Revisit the targets after 4 weeks of real data.
+
+### North star: picked-plan rate
+
+**Of the requests where 3 plans appear, the share where the user picks one** ("Pick this plan" or "Open the trip").
+
+Why this number: it is the moment Yalla keeps its promise. A user who picks a plan got something good enough to go with. It moves when plan quality, speed and fit improve, and it can't be gamed by just generating more plans.
+
+### Supporting metrics
+
+| Metric | Definition | Target (proposed) | Why it matters |
+|---|---|---|---|
+| **Picked-plan rate** (north star) | Requests with a `plan_picked` event ÷ requests with a `plans_shown` event | **≥ 50%** | The plans were good enough to act on |
+| **Share rate** | Picked plans with a `plan_shared` or `plan_whatsapp` event ÷ picked plans | **≥ 40%** | The group decision moved to WhatsApp, which is the product's promise |
+| **Time to 3 plans** | p95 of `latency_ms` on `plans_generated` | **≤ 8 s** now, **≤ 5 s** after the AI rework (section 3 promise) | Waiting kills the "15 seconds instead of 45 minutes" promise |
+| **Plan failure rate** | `plans_failed` ÷ all plan requests | **≤ 2%** | Every failure is a user who leaves with nothing |
+| **Edit rate** | Shown requests with at least one swap or removal ÷ shown requests | Watch, no target yet | Some edits are healthy; a high rate means the first draft is weak. Each edit is a free "this suggestion was wrong" label |
+| **Cost per plan request** | Sum of `cost_usd` in `ai_calls` per `run_id` | **Measure first**, then set a ceiling | AI is paid on every use; pricing and free limits depend on it (AI guide, step 8) |
+| **Weekly returning groups** | Devices with plan requests in 2 different weeks ÷ devices active this week | **≥ 25%** | Yalla becomes the weekend habit, not a one-off |
+
+### Guardrails (must not get worse)
+
+- **Plans that break the rules:** stops scheduled while a place is closed, over the stated budget, or against a diet. Target **0** in automated checks.
+- **Parser exam score:** `npm run eval` pass rate never drops below the floor in `evals/baseline.json`.
+
+### How each number is measured
+
+All numbers come from two logs, switched on in November 2026 (see [README](../README.md#logging-and-shared-limits)):
+
+- `ai_calls`: one row per Claude call: model, tokens, cost, time, success.
+- `events`: one row per product event, from the server (`plans_generated`, `plans_failed`) and from the browser (`plans_shown`, `plan_picked`, `stop_swapped`, `stop_removed`, `stop_added`, `plan_shared`, `plan_whatsapp`, ...). The full list is in `src/lib/track.ts`.
+
+A `run_id` joins one plan request across both logs. The database views `plan_runs` (one row per request) and `daily_metrics` (the numbers above per day) answer most questions directly.
+
+**Privacy:** no names, accounts or raw IP addresses are stored. Browsers get a random device id. The text a user types is kept so we can build the AI exam from real requests; tell users this in the privacy note before launch.
 
 ## 5. How the product works end to end
 
