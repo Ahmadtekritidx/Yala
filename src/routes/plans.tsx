@@ -16,6 +16,7 @@ import {
   type Place,
 } from "@/lib/places";
 import { hoursOn, openAt } from "@/lib/hours";
+import { alternatives, arrivalAfter, dietOf, type Rules } from "@/lib/alternatives";
 import { VibeStrip } from "@/components/VibeStrip";
 import { decodeBase, decodeCity, isLebanon } from "@/lib/city";
 import { loadSaved, type Saved } from "@/lib/saved";
@@ -185,14 +186,19 @@ function PlansPage() {
   const retime = (stops: Stop[], start: number): Stop[] => {
     let t = start;
     return stops.map((st, i) => {
-      if (i > 0) {
-        const a = byId(stops[i - 1]!.placeId)!,
-          b = byId(st.placeId)!;
-        t = Math.ceil((t + a.mins + driveMins(a, b)) / 15) * 15;
-      }
+      if (i > 0) t = arrivalAfter(t, byId(stops[i - 1]!.placeId)!, byId(st.placeId)!);
       return { ...st, time: t };
     });
   };
+
+  // The user's rules for a plan, so Swap and Add only offer places the planner would accept.
+  const avoid = s.avoid ? s.avoid.split(",") : [];
+  const rulesFor = (plan: Plan): Rules => ({
+    day: plan.day ?? s.day,
+    budget: Number(s.budget) || 0,
+    avoid,
+    diet: dietOf(s.prefs ? s.prefs.split(",") : []),
+  });
 
   // The plans with plan p's stops replaced (and re-timed from its first stop).
   const withStops = (ps: Plan[], p: number, stops: Stop[]) =>
@@ -213,11 +219,16 @@ function PlansPage() {
   const add = (p: number, cat: Category) => {
     if (!plans) return;
     const plan = plans[p]!;
-    const last = byId(plan.stops.at(-1)!.placeId)!;
-    const used = new Set(plans.flatMap((x) => x.stops.map((st) => st.placeId)));
-    const pick = allPlaces()
-      .filter((x) => x.cat === cat && !used.has(x.id) && driveMins(last, x) <= 45)
-      .sort((a, b) => driveMins(last, a) - driveMins(last, b) || b.rating - a.rating)[0];
+    const lastStop = plan.stops.at(-1)!;
+    const last = byId(lastStop.placeId)!;
+    const pick = alternatives(allPlaces(), {
+      cat,
+      near: last,
+      exclude: new Set(plans.flatMap((x) => x.stops.map((st) => st.placeId))),
+      maxDrive: 45,
+      arriveAt: (x) => arrivalAfter(lastStop.time, last, x),
+      rules: rulesFor(plan),
+    })[0];
     if (!pick) return dispatch({ type: "edit", editing: { kind: "addFailed", plan: p, cat } });
     dispatch({
       type: "change",
@@ -393,7 +404,9 @@ function PlansPage() {
                 )}
                 {editing.kind === "add" && editing.plan === p ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {CATEGORIES.map((c) => (
+                    {CATEGORIES.filter(
+                      (c) => !avoid.some((a) => a.toLowerCase() === c.toLowerCase()),
+                    ).map((c) => (
                       <button
                         key={c}
                         onClick={() => add(p, c)}
@@ -413,7 +426,8 @@ function PlansPage() {
                 )}
                 {editing.kind === "addFailed" && editing.plan === p && (
                   <p className="text-xs text-muted-foreground">
-                    No {editing.cat.toLowerCase()} spot within 45 min of the last stop.
+                    No {editing.cat.toLowerCase()} spot within 45 min of the last stop that is open
+                    then and fits your plan.
                   </p>
                 )}
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
@@ -450,6 +464,7 @@ function PlansPage() {
         <SwapSheet
           plans={plans}
           at={{ p: editing.plan, i: editing.stop }}
+          rules={rulesFor(plans[editing.plan]!)}
           onClose={() => dispatch({ type: "edit", editing: NOT_EDITING })}
           onPick={(id) => {
             const stops = plans[editing.plan]!.stops.map((st, k) =>
@@ -475,21 +490,32 @@ function PlansPage() {
 function SwapSheet({
   plans,
   at,
+  rules,
   onClose,
   onPick,
 }: {
   plans: Plan[];
   at: { p: number; i: number };
+  rules: Rules;
   onClose: () => void;
   onPick: (id: string) => void;
 }) {
   const [count, setCount] = useState(2);
   const plan = plans[at.p]!;
   const cur = byId(plan.stops[at.i]!.placeId)!;
-  const used = new Set(plan.stops.map((s) => s.placeId));
-  const alts = allPlaces()
-    .filter((x) => x.cat === cur.cat && !used.has(x.id) && driveMins(cur, x) <= 40)
-    .sort((a, b) => driveMins(cur, a) - driveMins(cur, b));
+  const prevStop = at.i > 0 ? plan.stops[at.i - 1]! : null;
+  const prev = prevStop ? byId(prevStop.placeId)! : null;
+  // When the replacement would arrive: the plan's start for the first stop, else after the previous stop.
+  const arriveAt = (x: Place) =>
+    prevStop && prev ? arrivalAfter(prevStop.time, prev, x) : plan.stops[0]!.time;
+  const alts = alternatives(allPlaces(), {
+    cat: cur.cat,
+    near: cur,
+    exclude: new Set(plan.stops.map((s) => s.placeId)),
+    maxDrive: 40,
+    arriveAt,
+    rules,
+  });
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-foreground/40" onClick={onClose}>
       <div
@@ -499,7 +525,8 @@ function SwapSheet({
         <p className="font-display text-xl font-bold">Swap {cur.name}</p>
         {alts.length === 0 && (
           <p className="mt-4 text-muted-foreground">
-            No other {cur.cat.toLowerCase()} spots nearby. This one's a keeper.
+            No other {cur.cat.toLowerCase()} spots nearby that are open then and fit your plan. This
+            one's a keeper.
           </p>
         )}
         <div className="mt-4 space-y-3">

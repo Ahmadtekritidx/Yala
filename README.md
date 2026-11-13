@@ -6,6 +6,7 @@ Say what you feel like doing this weekend, get 3 ready plans in 5 seconds, share
 
 - [Product Requirements (PRD)](docs/PRD.md)
 - [Roadmap](roadmap.md)
+- [AI at Yalla](docs/ai/README.md): how we build AI features (playbook), a review of the current AI, and the data / recommendations plan
 
 This project was built with [Lovable](https://lovable.dev).
 
