@@ -4,7 +4,7 @@ Working document. It records the decisions made so far while running the AI Feat
 
 |         |                                                                                                                                          |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Status  | Steps 1 to 3, 5 and 6 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                            |
+| Status  | Steps 1 to 3 and 5 to 7 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                          |
 | Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                            |
 | Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`) |
 
@@ -300,7 +300,55 @@ The real scorecard is filled in during Build (Step 9), which confirms or replace
 
 ---
 
+## Step 7: Trust UX (closed)
+
+Goal: the user understands why each suggestion was made, can fix anything in one tap, and is never stuck on an error screen. Avoid both over-trust and losing trust after one mistake.
+
+### Explain
+
+Today the plan shows the vibe, a reason per stop, price, rating, and a warning when a stop is closed. Add:
+
+| Addition                                                          | Why                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------ |
+| "Why this plan" line (from Request 1)                             | Shows the AI understood the request              |
+| Review count next to the rating, e.g. 4.6 (1,200)                 | Shows how solid the rating is                    |
+| "Open until 23:00" per stop                                       | Shows the hours were checked                     |
+| Drive time between stops                                          | No surprises on the road                         |
+| "You saved this" badge                                            | Shows saved reels were used                      |
+| Footer: "Planned by Yalla AI · Places and hours from Google Maps" | Honest about who chose and where facts come from |
+
+### Fix
+
+Today: swap (rule-checked), remove with a 5-second undo, add. Add:
+
+1. Undo for every change (swap, add, remove).
+2. After a swap, re-check later stops with the D2 rules and fix or flag them automatically.
+3. Quick-adjust buttons: More chill · Cheaper · More food · Closer. One tap regenerates with that change.
+
+### Feedback
+
+1. Record silent actions anonymously: picked, shared, shared link opened, swapped, removed, quick-adjust taps, left without picking. Sharing is the strongest signal.
+2. Optional thumbs up or down per plan, never a popup.
+3. "Did you go?" on the next app open.
+
+Today nothing is recorded (no database). Branch `claude/beautiful-fermi-tm77qr` has unmerged tracking and logging work to reuse.
+
+### When things go wrong
+
+Rules: never a dead end · be honest about what we did and couldn't do · offer one next step. Never silently ignore part of the request.
+
+| Case                      | Message                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| AI fails or is slow       | Plans with simpler text (D5 fallback): "Quick version: tap to refresh the descriptions"       |
+| Not enough open places    | "Only 2 spots are open in Douma on Monday. Here's a short plan, or try Batroun (25 min away)" |
+| Food need can't be met    | "We couldn't find vegan spots in this area. Want to try Beirut?"                              |
+| Something we can't do yet | "We can't check how busy places are yet, so this plan doesn't account for crowds"             |
+| Long drives               | "About 2h15 of driving today"                                                                 |
+| Map service down          | "We can't reach the map service right now. Try again in a minute"                             |
+
+---
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
-- Step 7: trust UX (what the user sees, and what happens when the AI is wrong).
+- Step 8: economics (cost per plan, speed budget, limits).
