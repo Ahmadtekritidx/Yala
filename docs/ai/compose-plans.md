@@ -4,7 +4,7 @@ Working document. It records the decisions made so far while running the AI Feat
 
 |         |                                                                                                                                          |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Status  | Steps 1 to 3 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                                     |
+| Status  | Steps 1 to 3 and 5 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                               |
 | Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                            |
 | Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`) |
 
@@ -217,7 +217,66 @@ About **40 tests**: 30 for practice, 10 locked away and used only for the final 
 
 ---
 
+## Step 5: Flow and contract (closed)
+
+A contract is the exact form each side fills in: what we send the AI, and the exact boxes it must answer in. An answer that doesn't fit the boxes is rejected automatically (Zod).
+
+### Request 1: Choose (D3)
+
+| Sent                                                                             | Example                                                     |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| What the user wrote, marked as user text, not instructions                       | "Bedna shi ma3 sunset"                                      |
+| The request, already understood                                                  | Batroun, Saturday, 14:00 to 22:00, chill                    |
+| Who's coming                                                                     | 4 friends, visitors from abroad: no                         |
+| Profile likes                                                                    | Sea view, hidden gems                                       |
+| The ~10 valid routes from D2: per stop name, type, time, area, score, short note | Route 4: Pizza Mia 14:00, Old Souk 16:00, Sunset Pier 17:00 |
+
+Not sent: all 150 places (it chooses among routes, it doesn't build them) · hours, distances, map positions (already checked; sending them invites maths) · name or personal details.
+
+**Answer form, 3 times:** route number (must be in the list, 3 different) · theme (a few words) · why (one short sentence, passed to Request 2).
+
+### Request 2: Write (D4)
+
+| Sent                                                | Example                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| The 3 chosen plans: per stop name, type, time       | Pizza Mia (lunch, 14:00), Old Souk (walk, 16:00), Sunset Pier (17:00) |
+| Theme and why from Request 1                        | "Food-led: long lunch, then sunset with friends"                      |
+| Facts it may use per place (the only allowed facts) | Pizza Mia: "wood-fired pizza", new: no                                |
+| Saved dish, if any                                  | Café X: "knefeh"                                                      |
+| What the user wrote                                 | "Bedna shi ma3 sunset"                                                |
+
+Not sent: the other routes · scores, ratings, hours, distances · any fact not in the allowed-facts box.
+
+**Answer form, per plan:** title (a few words) · vibe (one line) · reason per stop position (7 words max).
+The answer has **no place names or ids**: the program attaches each reason to its stop by position, so the AI cannot add, remove or change a place.
+
+### Source of truth: one source per fact
+
+| Fact                                        | Single source                                             |
+| ------------------------------------------- | --------------------------------------------------------- |
+| Place exists, hours, rating, reviews, price | Google (plus the hand-picked list)                        |
+| What a place is known for                   | Google or hand-picked note                                |
+| Driving time                                | One function in the program; the AI only sees final times |
+| Sunset time                                 | Program, by formula (today a fixed Lebanon table; to fix) |
+| Meal windows                                | One settings list in the program                          |
+| Place scores                                | D1                                                        |
+| What the user wants                         | B (Understand) output                                     |
+| Saved places and dishes                     | The user's browser                                        |
+| Plan choice and why                         | Request 1 (taste only)                                    |
+| Titles and reasons                          | Request 2 (words only)                                    |
+
+**Rule:** the AI is never the source of a fact, only of taste and words. This removes today's mismatch (prompt says 1.5 min per km, code uses about 1.86).
+
+```
+Google, Browser, B -> D1 Score -> D2 Build ~10 routes
+  -> Request 1 Choose: 3 route numbers + theme + why
+  -> Request 2 Write: title + vibe + reason per stop
+  -> D5 Check (+ fallback) -> User
+```
+
+---
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
-- Step 5: flow and contract (exact inputs and outputs of each AI request).
+- Step 6: choose the model for each AI request.
