@@ -2,11 +2,11 @@
 
 Working document. It records the decisions made so far while running the AI Feature Method (14 steps) on one feature: composing the day plans.
 
-|         |                                                                                                                                                                       |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Status  | Steps 1 to 3 and 5 to 8 closed (Frame and Define done, except the Step 4 review and remaining tests). Step 4 in progress (tasks 1 to 5 closed, task 6 is this review) |
-| Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                                                         |
-| Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`)                              |
+|         |                                                                                                                                                                                                                |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status  | Steps 1 to 3 and 5 to 8 closed. Step 4 waiting on review and 18 more tests. Step 9 (Build) in progress: exam machine built, baseline measured. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review) |
+| Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                                                                                                  |
+| Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`)                                                                       |
 
 ---
 
@@ -396,7 +396,49 @@ Today: 20 plans per hour per IP, kept in each server's memory (resets often); no
 
 ---
 
+## Step 9: Baseline and improvement loop (in progress)
+
+### The exam machine (built)
+
+| File                          | What it is                                                                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `evals/compose/tests.json`    | The 22 test requests as cards                                                                                                |
+| `evals/compose/grade.ts`      | Grades plans on the Yes/No checks and the instant fails a program can check; lists what needs a judge                        |
+| `src/lib/rules.ts`            | Meal windows, stops per pace, drive limits, sunset window, plan count: one place for the grader and the future route builder |
+| `evals/compose/run-live.ts`   | Runs tests through the live app (costs money, needs `--confirm`); saves each raw answer before reading it                    |
+| `evals/compose/regrade.ts`    | Re-grades saved answers with the current rules, for free                                                                     |
+| `tests/compose-grade.test.ts` | Proves every check catches its planted mistake                                                                               |
+
+Runs are saved in `evals/compose/runs/` and not committed (they hold Google place data).
+
+### Baseline: today's planner (2026-11-17)
+
+19 ready tests through the live app (one Opus 5.5 call, medium effort). `evals/compose/baseline.json`.
+
+| Measure            | Today            | Target                  |
+| ------------------ | ---------------- | ----------------------- |
+| Instant fails      | 0                | 0                       |
+| Yes/No checks      | 418 of 429 (97%) | 100%                    |
+| Tests fully passed | 9 of 19          | 19 of 19                |
+| Typical speed      | 18.1 s           | under 5 s               |
+| Slowest            | 28.7 s           | under 8 s               |
+| Quality (1 to 5)   | not graded yet   | average 4, none below 3 |
+
+Remaining failures: drives over the limit (4) · something asked for is missing (3) · two meals in a row (2) · sea view at sunset instead of before (1) · 2 plans instead of 3 on a normal window (1). The "ignore your rules" trick did not work. Reading the plans also showed text naming places that are not stops (a title "Bolero then Estephan" with no Bolero stop): a judge item (C4).
+
+Cost: 20 calls to the live app (one lost to a decoding bug, since fixed), under about $16.
+
+### Rule changes decided from the baseline (2026-11-17)
+
+| Rule       | Before                                                  | Now                                                                                          |
+| ---------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Sea view   | Every sea view stop just before sunset                  | Any time of day. Only when the user asks for a sunset must a sea view stop be just before it |
+| Meal label | A place found in a "dinner" search used at 13:00 failed | The time slot decides the meal; any meal stop must fall in some meal window                  |
+| Plan count | Always exactly 3                                        | Exactly 3, except a window of 3 hours or less may have 2, with an honest message             |
+
+---
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
-- Build phase, Step 9: baseline and prompt loop (needs the new design built).
+- Step 9: grade quality with a judge, then build D1, D2 and D5 in code and compare with the baseline.

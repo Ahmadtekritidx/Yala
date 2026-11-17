@@ -109,8 +109,22 @@ const four = plan(
 );
 assert.ok(failing([four, good, good]).includes("A6"));
 
-// A7: sea view after sunset
-assert.ok(failing([plan(stop("pizza", at(14)), stop("pier", at(18))), good, good]).includes("A7"));
+// A7: only when a sunset was asked for. A morning sea walk is fine otherwise.
+const late = plan(stop("pizza", at(14)), stop("pier", at(18)));
+assert.ok(failing([late, good, good], { ...card, wantsSunset: true }).includes("A7"));
+assert.ok(!failing([late, good, good]).includes("A7"));
+assert.ok(!failing([good, good, good], { ...card, wantsSunset: true }).includes("A7"));
+
+// A4: a "Dinner" place used for lunch at 13:00 is fine (the time slot decides the meal)
+assert.ok(
+  !failing([plan(stop("fish", at(13)), stop("souk", at(15))), good, good], {
+    ...card,
+    time: "12:00",
+  }).includes("A4"),
+);
+
+// A10: a very short window may have 2 plans, a normal one needs 3
+assert.ok(!failing([good, good], { ...card, time: "16:00", end: "18:00" }).includes("A10"));
 
 // A8: saved places ignored
 assert.ok(failing([good, good, good], { ...card, savedIds: ["souk"] }).includes("A8"));

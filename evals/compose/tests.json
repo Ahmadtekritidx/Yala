@@ -17,13 +17,14 @@
     "where": [],
     "sunset": "16:45",
     "roadTrip": false,
+    "wantsSunset": false,
     "mustInclude": [],
     "savedIds": []
   },
   "notes": {
     "fields": "Each test gives Compose what Understand would have extracted (where, what, day, time...) plus the user's own words in q, so the exam tests Compose, not Understand.",
     "mustInclude": "Every plan must contain one stop from each group. A group is categories separated by |.",
-    "sunset": "Local sunset for the test date (November in Lebanon).",
+    "sunset": "Local sunset for the test date (November in Lebanon). Checked only when wantsSunset is true.",
     "status": "ready = runnable now. later = needs data we don't have yet; kept so we don't forget."
   },
   "tests": [
@@ -130,6 +131,7 @@
       "end": "23:00",
       "people": "2",
       "what": ["Dinner", "Sea view"],
+      "wantsSunset": true,
       "mustInclude": ["Sea view"]
     },
     {
@@ -207,6 +209,7 @@
       "time": "13:00",
       "end": "21:00",
       "what": ["Sea view"],
+      "wantsSunset": true,
       "mustInclude": ["Sea view"]
     },
     {

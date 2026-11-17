@@ -6,13 +6,15 @@
 import { DUR, driveMins, kmBetween, type Category, type Place } from "../../src/lib/places.ts";
 import { hoursOn, openAt, parseHours } from "../../src/lib/hours.ts";
 import {
-  MEAL_WINDOWS,
+  MIN_PLANS_SHORT_WINDOW,
   PACE_STOPS,
   PLANS_PER_REQUEST,
   ROAD_TRIP_MAX_DRIVE_SHARE,
+  SHORT_WINDOW_MINUTES,
   SUNSET_ARRIVE_BY,
   SUNSET_ARRIVE_FROM,
   isMeal,
+  mealTimeOk,
 } from "../../src/lib/rules.ts";
 
 export type Card = {
@@ -35,6 +37,7 @@ export type Card = {
   maxDrive: number;
   sunset: string;
   roadTrip: boolean;
+  wantsSunset: boolean;
   mustInclude: string[];
   savedIds: string[];
   later?: string;
@@ -122,11 +125,8 @@ function planChecks(card: Card, plan: Plan, find: (id: string) => Place | undefi
     detail: long.map((l) => `${l.from.name} to ${l.to.name}: ${l.mins} min`).join("; "),
   });
 
-  // A4 meal times, no two meals back to back
-  const badMeal = visits.filter((s) => {
-    const w = MEAL_WINDOWS[s.place.cat];
-    return w && (s.time < w[0] || s.time > w[1]);
-  });
+  // A4 meal times (the time slot decides which meal), no two meals back to back
+  const badMeal = visits.filter((s) => isMeal(s.place.cat) && !mealTimeOk(s.time));
   const twoMeals = visits
     .slice(1)
     .filter((s, i) => isMeal(s.place.cat) && isMeal(visits[i]!.place.cat));
@@ -135,7 +135,7 @@ function planChecks(card: Card, plan: Plan, find: (id: string) => Place | undefi
     name: "Meals at normal times, never back to back",
     pass: !badMeal.length && !twoMeals.length,
     detail: [
-      ...badMeal.map((s) => `${s.place.cat} at ${hhmm(s.time)}`),
+      ...badMeal.map((s) => `meal at ${hhmm(s.time)} (${s.place.name})`),
       ...twoMeals.map((s) => `two meals in a row before ${s.place.name}`),
     ].join("; "),
   });
@@ -154,21 +154,23 @@ function planChecks(card: Card, plan: Plan, find: (id: string) => Place | undefi
     detail: `${visits.length} stops`,
   });
 
-  // A7 sea view before sunset
-  const sunset = min(card.sunset);
-  const badSea = visits.filter(
-    (s) =>
-      s.place.cat === "Sea view" &&
-      (s.time < sunset - SUNSET_ARRIVE_FROM || s.time > sunset - SUNSET_ARRIVE_BY),
-  );
-  out.push({
-    code: "A7",
-    name: "Sea view before sunset",
-    pass: !badSea.length,
-    detail: badSea
-      .map((s) => `${s.place.name} at ${hhmm(s.time)}, sunset ${card.sunset}`)
-      .join("; "),
-  });
+  // A7 when a sunset was asked for: a sea view stop just before sunset.
+  // A plan with no sea view at all is caught once, by A11 (everything asked for appears).
+  const sea = visits.filter((s) => s.place.cat === "Sea view");
+  if (card.wantsSunset && sea.length) {
+    const sunset = min(card.sunset);
+    const onTime = sea.some(
+      (s) => s.time >= sunset - SUNSET_ARRIVE_FROM && s.time <= sunset - SUNSET_ARRIVE_BY,
+    );
+    out.push({
+      code: "A7",
+      name: "Sea view just before sunset",
+      pass: onTime,
+      detail: onTime
+        ? ""
+        : sea.map((s) => `${s.place.name} at ${hhmm(s.time)}, sunset ${card.sunset}`).join("; "),
+    });
+  }
 
   // A8 saved places included
   if (card.savedIds.length)
@@ -229,11 +231,15 @@ function planChecks(card: Card, plan: Plan, find: (id: string) => Place | undefi
 }
 
 export function grade(card: Card, plans: Plan[], find: (id: string) => Place | undefined): Grade {
+  const short = min(card.end) - min(card.time) <= SHORT_WINDOW_MINUTES;
+  const fewest = short ? MIN_PLANS_SHORT_WINDOW : PLANS_PER_REQUEST;
   const checks: Check[] = [
     {
       code: "A10",
-      name: `Exactly ${PLANS_PER_REQUEST} plans`,
-      pass: plans.length === PLANS_PER_REQUEST,
+      name: short
+        ? `${fewest} to ${PLANS_PER_REQUEST} plans (short window)`
+        : `Exactly ${PLANS_PER_REQUEST} plans`,
+      pass: plans.length >= fewest && plans.length <= PLANS_PER_REQUEST,
       detail: `${plans.length} plans`,
     },
   ];
