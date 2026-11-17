@@ -1,0 +1,65 @@
+{
+  "planner": "live app today (one Opus 5.5 call, medium effort)",
+  "date": "2026-11-17",
+  "tests": 19,
+  "checks": 480,
+  "checksPassed": 459,
+  "testsFullyPassed": 6,
+  "instantFails": 0,
+  "quality": "not graded yet (needs the judge)",
+  "latencySeconds": {
+    "typical": 18.1,
+    "slowest": 28.7,
+    "p95": 28.7
+  },
+  "byCheck": {
+    "A10": {
+      "passed": 17,
+      "total": 19
+    },
+    "A1": {
+      "passed": 55,
+      "total": 55
+    },
+    "A2": {
+      "passed": 55,
+      "total": 55
+    },
+    "A3": {
+      "passed": 51,
+      "total": 55
+    },
+    "A4": {
+      "passed": 50,
+      "total": 55
+    },
+    "A5": {
+      "passed": 55,
+      "total": 55
+    },
+    "A6": {
+      "passed": 55,
+      "total": 55
+    },
+    "A7": {
+      "passed": 48,
+      "total": 55
+    },
+    "A9": {
+      "passed": 55,
+      "total": 55
+    },
+    "A11": {
+      "passed": 12,
+      "total": 15
+    },
+    "A8": {
+      "passed": 3,
+      "total": 3
+    },
+    "A12": {
+      "passed": 3,
+      "total": 3
+    }
+  }
+}
