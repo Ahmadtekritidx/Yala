@@ -4,7 +4,7 @@ Working document. It records the decisions made so far while running the AI Feat
 
 |         |                                                                                                                                          |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Status  | Steps 1 to 3 and 5 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                               |
+| Status  | Steps 1 to 3, 5 and 6 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                            |
 | Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                            |
 | Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`) |
 
@@ -276,7 +276,31 @@ Google, Browser, B -> D1 Score -> D2 Build ~10 routes
 
 ---
 
+## Step 6: Choose the model (closed, to confirm with the exam)
+
+**How we choose:** never by feeling. Every candidate takes the same exam (Step 4) with the same frozen places and the same contracts (Step 5); only the model changes. We record quality, instant fails, speed and cost, and keep **the cheapest model that passes**.
+
+| Model                            | Price per million tokens in / out (Nov 2026) | Relative | Use                                                              |
+| -------------------------------- | -------------------------------------------- | -------- | ---------------------------------------------------------------- |
+| Haiku 5.5 (`claude-haiku-5-5`)   | $0.10 / $0.50                                | 1x       | Simple, fast tasks                                               |
+| Sonnet 5.5 (`claude-sonnet-5-5`) | $2 / $10                                     | 20x      | Most product tasks, taste and writing                            |
+| Opus 5.5 (`claude-opus-5-5`)     | $4 / $20                                     | 40x      | Hard reasoning. Today's model for every Yalla call               |
+| Fable 5.2 (`claude-fable-5-2`)   | $8 / $40                                     | 80x      | Long, complex work. Not a candidate: too slow for a 5-second app |
+
+Effort (low to max) is a second dial on each model: deeper thinking is slower and costs more.
+
+**Starting choice**
+
+| Request     | Start with | Effort | Also tested         | Why                                                                    |
+| ----------- | ---------- | ------ | ------------------- | ---------------------------------------------------------------------- |
+| Choose (D3) | Sonnet 5.5 | Low    | Haiku 5.5, Opus 5.5 | Taste needs a solid model; Opus is probably more than needed           |
+| Write (D4)  | Haiku 5.5  | Medium | Sonnet 5.5          | Short text from given facts is simple; move up if the tone check fails |
+
+The real scorecard is filled in during Build (Step 9), which confirms or replaces these choices. Sonnet uses server-side refusal fallback; Haiku has none, so a refusal on Write goes to the D5 fallback (plans with simple text).
+
+---
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
-- Step 6: choose the model for each AI request.
+- Step 7: trust UX (what the user sees, and what happens when the AI is wrong).
