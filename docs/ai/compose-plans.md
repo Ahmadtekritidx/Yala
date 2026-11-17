@@ -2,11 +2,11 @@
 
 Working document. It records the decisions made so far while running the AI Feature Method (14 steps) on one feature: composing the day plans.
 
-|         |                                                                                                                                          |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Status  | Steps 1 to 3 and 5 to 7 closed. Step 4 in progress (tasks 1 to 5 closed, task 6 is this review)                                          |
-| Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                            |
-| Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`) |
+|         |                                                                                                                                                                       |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status  | Steps 1 to 3 and 5 to 8 closed (Frame and Define done, except the Step 4 review and remaining tests). Step 4 in progress (tasks 1 to 5 closed, task 6 is this review) |
+| Scope   | **Day out only** (3 plans for one day). Trip mode and Swap/Add keep working as today and are redesigned later                                                         |
+| Related | [PRD](../PRD.md) · Youssef's AI docs on branch `claude/ai-architecture-review-a430a4` (`docs/ai/playbook.md`, `docs/ai/yalla-review.md`)                              |
 
 ---
 
@@ -348,7 +348,55 @@ Rules: never a dead end · be honest about what we did and couldn't do · offer 
 
 ---
 
+## Step 8: Economics (closed)
+
+Every plan costs money (AI plus Google), so we set cost, speed and limits on purpose. All numbers are estimates to measure once built.
+
+### Cost per plan
+
+|                             | AI                               | Google Places        | Total                |
+| --------------------------- | -------------------------------- | -------------------- | -------------------- |
+| Today (one Opus request)    | about 10 cents (double on retry) | up to about 70 cents | up to about 80 cents |
+| New design (Sonnet + Haiku) | about 1 cent                     | up to about 70 cents | up to about 71 cents |
+
+Google costs far more than the AI: a Text Search with ratings and hours is billed at the Enterprise rate (about $35 per 1,000 for the first 100,000 a month), and a plan can trigger up to 18 searches today. The 6-hour cache lives in each server's memory, so the real average is unknown.
+
+**Target: under 5 cents per plan.** How: share cached searches across all users for 24 hours (in a database), search only for what Understand extracted, and request fewer fields.
+
+### Speed budget (5 seconds)
+
+| Step                     | Budget                        |
+| ------------------------ | ----------------------------- |
+| B Understand (Haiku)     | about 1 s                     |
+| C Fetch (Google, cached) | about 1 s, near 0 when cached |
+| D1 + D2 (program)        | about 0.1 s                   |
+| D3 Choose (Sonnet)       | about 1.5 s                   |
+| D4 Write (Haiku)         | about 1 s                     |
+| D5 Check                 | about 0                       |
+
+- Show the plans (places and times) as soon as Choose returns; titles and descriptions fill in after Write.
+- Time limit per AI step (about 3 s): Choose too slow means the top 3 D2 routes; Write too slow means simple text (D5 fallback).
+- Targets: typical under 5 s, slowest 5% under 8 s.
+
+### Limits and safety
+
+| Limit                 | Value                                                                                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Free version          | **2 plans per day, 5 plans per month** (about one per weekend; at most about 25 cents per free user per month)                                                                         |
+| Who is counted        | Browser ID now; sign-in (phone or Google) when the paid version launches                                                                                                               |
+| What counts as 1 plan | One request (3 options). Swap, remove, add and opening shared links are free. One free quick-adjust per plan, then each adjust counts                                                  |
+| At the limit          | "You've used your 5 free plans this month. Your saved plans are still here. New plans on the 1st, or go unlimited with Yalla Plus." Saved plans can still be opened, edited and shared |
+| Daily spending cap    | $20 per day for all of Yalla; above it, cheaper mode (cached places, simple text)                                                                                                      |
+| Alerts                | At 50% and 80% of the daily cap                                                                                                                                                        |
+| Emergency off switch  | One setting turns the AI off instantly; plans keep working with program routes and simple text                                                                                         |
+| Retries               | 1 retry max per AI step, within its time limit                                                                                                                                         |
+| Paid version          | To define later                                                                                                                                                                        |
+
+Today: 20 plans per hour per IP, kept in each server's memory (resets often); no daily cap, alert or off switch. Limits must move to a shared database.
+
+---
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
-- Step 8: economics (cost per plan, speed budget, limits).
+- Build phase, Step 9: baseline and prompt loop (needs the new design built).
