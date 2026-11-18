@@ -11,10 +11,16 @@ node tests/e2e.mjs
 node tests/world.e2e.cjs
 # Istanbul 3-day trip, then a Lebanon weekend
 node tests/trip.e2e.cjs
+# all unit tests at once (opening hours, Swap/Add, page states, exam marker, database client)
+npm test
+# the AI parser exam (see evals/run.ts)
+npm run eval
 # opening-hours parser
 bun tests/hours.test.ts
 # the /plans page state machine (loading/failed/ready, edit mode, undo, stale answers)
 node --experimental-strip-types tests/plans-state.test.ts
+# Swap / Add candidates: open at that time, not avoided, within budget, matching the diet
+node --experimental-strip-types tests/alternatives.test.ts
 ```
 
 UI state that has more than two states lives in one explicit machine, not in loose `useState` flags:

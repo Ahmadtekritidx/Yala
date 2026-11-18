@@ -62,6 +62,13 @@ function StatusPage() {
             detail={s.firecrawlKey ? "" : "Optional. Without it, Insta buttons open a search."}
           />
           <Row
+            label="Database for logs, limits and cache (SUPABASE_URL)"
+            ok={s.store.ok}
+            detail={
+              s.store.ok ? "Connected. AI calls and user events are being recorded." : s.store.error
+            }
+          />
+          <Row
             label="Live Google Places search"
             ok={s.ok}
             detail={

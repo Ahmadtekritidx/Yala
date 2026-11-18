@@ -16,9 +16,11 @@ import {
   type Place,
 } from "@/lib/places";
 import { hoursOn, openAt } from "@/lib/hours";
+import { alternatives, arrivalAfter, dietOf, type Rules } from "@/lib/alternatives";
 import { VibeStrip } from "@/components/VibeStrip";
 import { decodeBase, decodeCity, isLebanon } from "@/lib/city";
 import { loadSaved, type Saved } from "@/lib/saved";
+import { deviceId, track } from "@/lib/track";
 
 const Search = z.object({
   q: z.coerce.string().optional().default(""),
@@ -44,18 +46,18 @@ const Search = z.object({
 // Keep the last result per request in this tab, so "Edit plan" and back navigation
 // show the same (edited) plans instead of generating new ones.
 const cacheKey = (s: object) => "yalla:plans:" + JSON.stringify(s);
-function readCache(key: string): { plans: Plan[]; places: Place[] } | null {
+function readCache(key: string): { plans: Plan[]; places: Place[]; runId?: string } | null {
   try {
     return JSON.parse(sessionStorage.getItem(key) || "null");
   } catch {
     return null;
   }
 }
-function writeCache(key: string, plans: Plan[]) {
+function writeCache(key: string, plans: Plan[], runId: string | undefined) {
   try {
     const ids = new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)));
     const places = allPlaces().filter((p) => p.live && ids.has(p.id));
-    sessionStorage.setItem(key, JSON.stringify({ plans, places }));
+    sessionStorage.setItem(key, JSON.stringify({ plans, places, runId }));
   } catch {
     /* storage full or blocked: plans just aren't cached */
   }
@@ -95,6 +97,8 @@ function PlansPage() {
   const undo = state.status === "ready" ? state.undo : null;
   const [n, setN] = useState(0);
   const lastRun = useRef(0);
+  // The server's id for the plans on screen, so taps on them join the request in the logs.
+  const runId = useRef<string | undefined>(undefined);
   const [msg, setMsg] = useState(0);
   const [mySaves, setMySaves] = useState<Saved[]>([]);
 
@@ -112,7 +116,7 @@ function PlansPage() {
   const key = cacheKey(s);
 
   useEffect(() => {
-    if (plans) writeCache(key, plans);
+    if (plans) writeCache(key, plans, runId.current);
   }, [plans, key]);
 
   useEffect(() => {
@@ -124,7 +128,9 @@ function PlansPage() {
     const hit = n === 0 ? readCache(key) : null;
     if (hit) {
       registerPlaces(hit.places);
+      runId.current = hit.runId;
       dispatch({ type: "loaded", run, plans: hit.plans });
+      track("plans_shown", { count: hit.plans.length, cached: true }, hit.runId);
       return;
     }
     const savedInput =
@@ -151,6 +157,7 @@ function PlansPage() {
         maxDrive: Number(s.drive) || 30,
         saved: savedInput,
         days: Math.min(7, Math.max(1, Number(s.days) || 1)),
+        device: deviceId(),
         ...(decodeBase(s.base) ? { base: decodeBase(s.base)! } : {}),
         ...(/^\d{4}-\d{2}-\d{2}$/.test(s.start) ? { start: s.start } : {}),
         ...(() => {
@@ -160,11 +167,16 @@ function PlansPage() {
       },
     })
       .then((r) => {
-        if ("error" in r && r.error) return dispatch({ type: "failed", run, error: r.error });
+        if ("error" in r && r.error) {
+          track("plans_error", { error: r.error }, r.runId);
+          return dispatch({ type: "failed", run, error: r.error });
+        }
         // An answer for a request the user already moved on from: drop it, places included.
         if (run !== lastRun.current) return;
         if (r.places) registerPlaces(r.places);
+        runId.current = r.runId;
         dispatch({ type: "loaded", run, plans: r.plans! });
+        track("plans_shown", { count: r.plans!.length, cached: false }, r.runId);
       })
       .catch(() =>
         dispatch({ type: "failed", run, error: "Something broke on our side. Try again?" }),
@@ -185,14 +197,19 @@ function PlansPage() {
   const retime = (stops: Stop[], start: number): Stop[] => {
     let t = start;
     return stops.map((st, i) => {
-      if (i > 0) {
-        const a = byId(stops[i - 1]!.placeId)!,
-          b = byId(st.placeId)!;
-        t = Math.ceil((t + a.mins + driveMins(a, b)) / 15) * 15;
-      }
+      if (i > 0) t = arrivalAfter(t, byId(stops[i - 1]!.placeId)!, byId(st.placeId)!);
       return { ...st, time: t };
     });
   };
+
+  // The user's rules for a plan, so Swap and Add only offer places the planner would accept.
+  const avoid = s.avoid ? s.avoid.split(",") : [];
+  const rulesFor = (plan: Plan): Rules => ({
+    day: plan.day ?? s.day,
+    budget: Number(s.budget) || 0,
+    avoid,
+    diet: dietOf(s.prefs ? s.prefs.split(",") : []),
+  });
 
   // The plans with plan p's stops replaced (and re-timed from its first stop).
   const withStops = (ps: Plan[], p: number, stops: Stop[]) =>
@@ -200,6 +217,7 @@ function PlansPage() {
 
   const remove = (p: number, i: number) => {
     if (!plans) return;
+    track("stop_removed", { plan: p, stop: i, place: plans[p]!.stops[i]!.placeId }, runId.current);
     dispatch({
       type: "remove",
       plans: withStops(
@@ -213,12 +231,21 @@ function PlansPage() {
   const add = (p: number, cat: Category) => {
     if (!plans) return;
     const plan = plans[p]!;
-    const last = byId(plan.stops.at(-1)!.placeId)!;
-    const used = new Set(plans.flatMap((x) => x.stops.map((st) => st.placeId)));
-    const pick = allPlaces()
-      .filter((x) => x.cat === cat && !used.has(x.id) && driveMins(last, x) <= 45)
-      .sort((a, b) => driveMins(last, a) - driveMins(last, b) || b.rating - a.rating)[0];
-    if (!pick) return dispatch({ type: "edit", editing: { kind: "addFailed", plan: p, cat } });
+    const lastStop = plan.stops.at(-1)!;
+    const last = byId(lastStop.placeId)!;
+    const pick = alternatives(allPlaces(), {
+      cat,
+      near: last,
+      exclude: new Set(plans.flatMap((x) => x.stops.map((st) => st.placeId))),
+      maxDrive: 45,
+      arriveAt: (x) => arrivalAfter(lastStop.time, last, x),
+      rules: rulesFor(plan),
+    })[0];
+    if (!pick) {
+      track("stop_add_failed", { plan: p, cat }, runId.current);
+      return dispatch({ type: "edit", editing: { kind: "addFailed", plan: p, cat } });
+    }
+    track("stop_added", { plan: p, cat, place: pick.id }, runId.current);
     dispatch({
       type: "change",
       plans: withStops(plans, p, [
@@ -238,7 +265,10 @@ function PlansPage() {
           ← {label}
         </Link>
         <button
-          onClick={() => setN((x) => x + 1)}
+          onClick={() => {
+            track("plans_shuffled", { after: error ? "error" : "plans" }, runId.current);
+            setN((x) => x + 1);
+          }}
           disabled={!plans && !error}
           className="min-h-11 shrink-0 rounded-full pop press bg-accent text-accent-foreground px-4 text-sm font-bold text-secondary-foreground disabled:opacity-40"
         >
@@ -251,7 +281,10 @@ function PlansPage() {
           <p className="font-display text-2xl font-bold">Ya jama3a...</p>
           <p className="mt-2 text-muted-foreground">{error}</p>
           <button
-            onClick={() => setN((x) => x + 1)}
+            onClick={() => {
+              track("plans_shuffled", { after: error ? "error" : "plans" }, runId.current);
+              setN((x) => x + 1);
+            }}
             className="mt-6 min-h-12 rounded-2xl pop press bg-primary px-6 font-bold text-primary-foreground"
           >
             Try again
@@ -393,7 +426,9 @@ function PlansPage() {
                 )}
                 {editing.kind === "add" && editing.plan === p ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {CATEGORIES.map((c) => (
+                    {CATEGORIES.filter(
+                      (c) => !avoid.some((a) => a.toLowerCase() === c.toLowerCase()),
+                    ).map((c) => (
                       <button
                         key={c}
                         onClick={() => add(p, c)}
@@ -413,7 +448,8 @@ function PlansPage() {
                 )}
                 {editing.kind === "addFailed" && editing.plan === p && (
                   <p className="text-xs text-muted-foreground">
-                    No {editing.cat.toLowerCase()} spot within 45 min of the last stop.
+                    No {editing.cat.toLowerCase()} spot within 45 min of the last stop that is open
+                    then and fits your plan.
                   </p>
                 )}
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
@@ -425,6 +461,11 @@ function PlansPage() {
                   <button
                     className="min-h-11 rounded-xl pop press bg-primary px-5 font-bold text-primary-foreground"
                     onClick={() => {
+                      track(
+                        "plan_picked",
+                        { plan: p, title: plan.title, stops: plan.stops.length },
+                        runId.current,
+                      );
                       const code = tripDays
                         ? encodeTrip(plans.map((x) => ({ ...x, day: x.day ?? s.day })))
                         : encodePlan({ ...plan, day: s.day });
@@ -450,8 +491,19 @@ function PlansPage() {
         <SwapSheet
           plans={plans}
           at={{ p: editing.plan, i: editing.stop }}
+          rules={rulesFor(plans[editing.plan]!)}
           onClose={() => dispatch({ type: "edit", editing: NOT_EDITING })}
           onPick={(id) => {
+            track(
+              "stop_swapped",
+              {
+                plan: editing.plan,
+                stop: editing.stop,
+                from: plans[editing.plan]!.stops[editing.stop]!.placeId,
+                to: id,
+              },
+              runId.current,
+            );
             const stops = plans[editing.plan]!.stops.map((st, k) =>
               k === editing.stop ? { ...st, placeId: id, reason: byId(id)!.reason } : st,
             );
@@ -463,7 +515,13 @@ function PlansPage() {
       {undo && (
         <div className="fixed inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-4 rounded-full bg-foreground px-5 py-3 text-sm text-background shadow-lg">
           Stop removed
-          <button className="font-bold text-primary" onClick={() => dispatch({ type: "undo" })}>
+          <button
+            className="font-bold text-primary"
+            onClick={() => {
+              track("stop_remove_undone", {}, runId.current);
+              dispatch({ type: "undo" });
+            }}
+          >
             Undo
           </button>
         </div>
@@ -475,21 +533,32 @@ function PlansPage() {
 function SwapSheet({
   plans,
   at,
+  rules,
   onClose,
   onPick,
 }: {
   plans: Plan[];
   at: { p: number; i: number };
+  rules: Rules;
   onClose: () => void;
   onPick: (id: string) => void;
 }) {
   const [count, setCount] = useState(2);
   const plan = plans[at.p]!;
   const cur = byId(plan.stops[at.i]!.placeId)!;
-  const used = new Set(plan.stops.map((s) => s.placeId));
-  const alts = allPlaces()
-    .filter((x) => x.cat === cur.cat && !used.has(x.id) && driveMins(cur, x) <= 40)
-    .sort((a, b) => driveMins(cur, a) - driveMins(cur, b));
+  const prevStop = at.i > 0 ? plan.stops[at.i - 1]! : null;
+  const prev = prevStop ? byId(prevStop.placeId)! : null;
+  // When the replacement would arrive: the plan's start for the first stop, else after the previous stop.
+  const arriveAt = (x: Place) =>
+    prevStop && prev ? arrivalAfter(prevStop.time, prev, x) : plan.stops[0]!.time;
+  const alts = alternatives(allPlaces(), {
+    cat: cur.cat,
+    near: cur,
+    exclude: new Set(plan.stops.map((s) => s.placeId)),
+    maxDrive: 40,
+    arriveAt,
+    rules,
+  });
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-foreground/40" onClick={onClose}>
       <div
@@ -499,7 +568,8 @@ function SwapSheet({
         <p className="font-display text-xl font-bold">Swap {cur.name}</p>
         {alts.length === 0 && (
           <p className="mt-4 text-muted-foreground">
-            No other {cur.cat.toLowerCase()} spots nearby. This one's a keeper.
+            No other {cur.cat.toLowerCase()} spots nearby that are open then and fit your plan. This
+            one's a keeper.
           </p>
         )}
         <div className="mt-4 space-y-3">

@@ -4,12 +4,12 @@ import { cityNear, searchCityList, searchStayList } from "./live.server";
 import { rateLimit } from "./limit.server";
 
 // Each lookup is a paid Google call. Generous for typing in a picker, a wall for scripts.
-const overLimit = () => rateLimit("lookup", 300, 3600e3) > 0;
+const overLimit = async () => (await rateLimit("lookup", 300, 3600e3)) > 0;
 
 export const searchCities = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ q: z.string().min(2).max(80) }).parse(d))
   .handler(async ({ data }) => ({
-    cities: overLimit() ? [] : await searchCityList(data.q).catch(() => []),
+    cities: (await overLimit()) ? [] : await searchCityList(data.q).catch(() => []),
   }));
 
 export const cityFromLocation = createServerFn({ method: "POST" })
@@ -17,7 +17,7 @@ export const cityFromLocation = createServerFn({ method: "POST" })
     z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).parse(d),
   )
   .handler(async ({ data }) => ({
-    city: overLimit() ? null : await cityNear(data.lat, data.lng).catch(() => null),
+    city: (await overLimit()) ? null : await cityNear(data.lat, data.lng).catch(() => null),
   }));
 
 export const searchStays = createServerFn({ method: "POST" })
@@ -31,7 +31,7 @@ export const searchStays = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => ({
-    stays: overLimit()
+    stays: (await overLimit())
       ? []
       : await searchStayList(
           data.q,

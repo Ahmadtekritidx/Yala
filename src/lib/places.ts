@@ -31,6 +31,8 @@ export type Place = {
   live?: boolean | undefined;
   /** Opening hours for each weekday, Monday first (live places only). */
   week?: string[] | undefined;
+  /** Set when Google returned this place for a diet search, e.g. "vegan" (live places only). */
+  diet?: string | undefined;
 };
 
 type Row = [string, string, Category, number, 1 | 2 | 3, string, number, number, boolean?];

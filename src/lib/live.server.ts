@@ -1,11 +1,28 @@
 import { DUR, type Category, type Place } from "./places";
 import type { City } from "./city";
+import { kvGet, kvSet } from "./store.server";
+import { cuisineOf } from "./intent";
+export { cuisineOf };
 
 // Google Places API (New), called directly with our own key
 const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
 const googleKey = () => process.env["GOOGLE_PLACES_API_KEY"];
+// Search results are cached for 6 hours, Instagram handles for 30 days. Each cache has a fast copy in this
+// server's memory (capped, oldest dropped first) and, when the shared store is configured, a shared copy
+// in the database so every server instance and restart reuses the same paid lookups.
+const SEARCH_TTL = 6 * 3600e3;
+const IG_TTL = 30 * 24 * 3600e3;
+const MEM_MAX = 2000;
 const cache = new Map<string, { at: number; v: Place[] }>();
 const igCache = new Map<string, string | null>();
+function remember<V>(m: Map<string, V>, k: string, v: V) {
+  m.delete(k);
+  m.set(k, v);
+  for (const old of m.keys()) {
+    if (m.size <= MEM_MAX) break;
+    m.delete(old);
+  }
+}
 let lastError = "";
 
 const Q: Record<Category, string> = {
@@ -64,35 +81,6 @@ const DAY_IDX: Record<string, number> = {
 };
 
 const MEALS = new Set<Category>(["Breakfast", "Brunch", "Lunch", "Dinner"]);
-// Food words we pass straight to Google so "Italian lunch" searches Italian places
-const CUISINES = [
-  "italian",
-  "pizza",
-  "sushi",
-  "japanese",
-  "chinese",
-  "asian",
-  "thai",
-  "indian",
-  "mexican",
-  "burger",
-  "steak",
-  "seafood",
-  "fish",
-  "armenian",
-  "french",
-  "greek",
-  "mediterranean",
-  "manakish",
-  "shawarma",
-  "falafel",
-  "grill",
-  "vegan",
-  "vegetarian",
-];
-export const cuisineOf = (text: string) =>
-  CUISINES.find((c) => new RegExp(`\\b${c}\\b`, "i").test(text)) ?? "";
-
 async function search(
   cat: Category,
   area: string,
@@ -102,6 +90,7 @@ async function search(
   diet = "",
   cuisine = "",
   geo?: City,
+  fresh = false, // skip the caches (the /status check must hit Google)
 ): Promise<Place[]> {
   const q = (geo && Q_WORLD[cat]) || Q[cat];
   const meal = cat === "Lunch" || cat === "Dinner" ? (cuisine ? `${cuisine} restaurant` : q) : q;
@@ -111,8 +100,17 @@ async function search(
       : `${area}, ${geo.country}`
     : `${area}, Lebanon`;
   const text = `${cat === "Stay" ? stayType : (MEALS.has(cat) && diet && diet !== cuisine ? `${diet} ` : "") + meal} in ${where}`;
-  const hit = cache.get(text + day);
-  if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.v;
+  // Places Google returns for "vegan lunch in Batroun" are the ones we know fit that diet (Swap/Add rely on it).
+  const dietTag =
+    MEALS.has(cat) && diet && new RegExp(`\\b${diet}\\b`, "i").test(text) ? diet : undefined;
+  const ck = text + day;
+  const hit = fresh ? undefined : cache.get(ck);
+  if (hit && Date.now() - hit.at < SEARCH_TTL) return hit.v;
+  const shared = fresh ? undefined : await kvGet<Place[]>("places:" + ck);
+  if (shared) {
+    remember(cache, ck, { at: Date.now(), v: shared });
+    return shared;
+  }
   const res = await fetch(PLACES_URL, {
     method: "POST",
     headers: {
@@ -169,8 +167,10 @@ async function search(
       hours: p.regularOpeningHours?.weekdayDescriptions?.[dayIdx]?.replace(/^\w+:\s*/, ""),
       week: p.regularOpeningHours?.weekdayDescriptions?.map((d) => d.replace(/^\w+:\s*/, "")),
       live: true,
+      ...(dietTag ? { diet: dietTag } : {}),
     }));
-  cache.set(text + day, { at: Date.now(), v });
+  remember(cache, ck, { at: Date.now(), v });
+  await kvSet("places:" + ck, v, SEARCH_TTL);
   return v;
 }
 
@@ -201,10 +201,14 @@ export async function livePlaces(opts: {
       ),
     ),
   );
-  const seen = new Set<string>();
-  return (await Promise.all(jobs.slice(0, 18)))
-    .flat()
-    .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  // One entry per place; keep the diet tag if any of the searches that found it had one.
+  const found = new Map<string, Place>();
+  for (const p of (await Promise.all(jobs.slice(0, 18))).flat()) {
+    const had = found.get(p.id);
+    if (!had) found.set(p.id, p);
+    else if (p.diet && !had.diet) found.set(p.id, { ...had, diet: p.diet });
+  }
+  return [...found.values()];
 }
 
 // Find each place's real Instagram account via web search (best effort, short timeout).
@@ -219,6 +223,12 @@ export async function findInstas(places: Place[]) {
         const k = p.id;
         if (igCache.has(k)) {
           p.insta = igCache.get(k) ?? undefined;
+          return;
+        }
+        const shared = await kvGet<string | null>("ig:" + k);
+        if (shared !== undefined) {
+          remember(igCache, k, shared);
+          p.insta = shared ?? undefined;
           return;
         }
         try {
@@ -243,7 +253,9 @@ export async function findInstas(places: Place[]) {
                 /^https?:\/\/(www\.)?instagram\.com\/[A-Za-z0-9._]+\/?$/.test(u.split("?")[0]!) &&
                 !/instagram\.com\/(explore|p|reel|stories|accounts)\b/.test(u),
             );
-          igCache.set(k, url ? url.split("?")[0]! : null);
+          const handle = url ? url.split("?")[0]! : null;
+          remember(igCache, k, handle);
+          await kvSet("ig:" + k, handle, IG_TTL);
           if (url) p.insta = url.split("?")[0];
         } catch {
           /* ignore */
@@ -273,8 +285,17 @@ export async function placesStatus() {
     return out;
   }
   lastError = "";
-  cache.delete("specialty coffee shop in Beirut, Lebanon" + "Saturday");
-  const list = await search("Specialty coffee", "Beirut", "Saturday", "", gkey).catch((e) => {
+  const list = await search(
+    "Specialty coffee",
+    "Beirut",
+    "Saturday",
+    "",
+    gkey,
+    "",
+    "",
+    undefined,
+    true,
+  ).catch((e) => {
     lastError = String(e);
     return [] as Place[];
   });
