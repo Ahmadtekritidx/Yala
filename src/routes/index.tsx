@@ -5,7 +5,6 @@ import { clearAsk, dueAsk, type PendingAsk } from "@/lib/did-you-go";
 import { track } from "@/lib/track";
 import { toMin } from "@/lib/places";
 import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/profile";
-import { SavedReels } from "@/components/SavedReels";
 import { CityPicker } from "@/components/CityPicker";
 import { StayPicker } from "@/components/StayPicker";
 import {
@@ -397,24 +396,6 @@ function Home() {
       >
         {mode === "trip" ? `Plan my ${days} days` : "Give me 3 plans"}
       </button>
-
-      <SavedReels
-        onPlan={() =>
-          navigate({
-            to: "/plans",
-            search: {
-              q: text.trim() || "Build it around my saved places",
-              what: what.join(","),
-              where: where.join(","),
-              day,
-              time,
-              end,
-              saved: "1",
-              ...cityParam,
-            },
-          })
-        }
-      />
 
       {leb && (
         <section className="mt-16">
