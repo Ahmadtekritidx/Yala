@@ -438,6 +438,20 @@ Cost: 20 calls to the live app (one lost to a decoding bug, since fixed), under 
 
 ---
 
+### New version live (2026-11-18)
+
+Built from Steps 1 to 8 and pushed to main: code builds valid routes (D1, D2), Sonnet 5.5 chooses, Haiku 5.5 writes, code checks with a plain-text fallback (D5); the Step 7 screen (why this plan, footer, undo for every change, re-check after a swap, quick-adjust buttons, thumbs, Did you go?); free limits (2 a day, 5 a month); off switch; daily AI cap (needs the database). Trips keep the old planner.
+
+First live exam, 3 tests:
+
+| Test                | Speed before | Speed now | Checks before | Checks now |
+| ------------------- | ------------ | --------- | ------------- | ---------- |
+| 1 Batroun basic     | 15.6 s       | 9.6 s     | 22/22         | 22/22      |
+| 9 Romantic sunset   | 14.9 s       | 8.1 s     | 24/28         | 28/28      |
+| 15 Sea and mountain | 28.7 s       | 9.3 s     | 24/25         | 22/25      |
+
+Test 15 showed requested categories were only a bonus and the variety step could drop the only sea view; fixed (routes covering everything asked for come first). Still open: speed is about 9 s against the 5 s target; the database is not on yet (Supabase blocked by overdue invoices on the Figure8 DX Platform organization).
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
