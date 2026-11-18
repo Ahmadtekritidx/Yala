@@ -8,6 +8,7 @@ import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/
 import { CityPicker } from "@/components/CityPicker";
 import { StayPicker } from "@/components/StayPicker";
 import {
+  decodeBase,
   encodeBase,
   type Base,
   encodeCity,
@@ -174,6 +175,12 @@ function Home() {
       if (pr?.maxDrive) setDrive(pr.maxDrive);
       const c = loadCity();
       setCity(c);
+      // The stay is remembered for the city it was picked in.
+      const saved = JSON.parse(localStorage.getItem("yalla:stay") || "null") as {
+        city: string;
+        base: string;
+      } | null;
+      if (saved && saved.city === encodeCity(c)) setBase(decodeBase(saved.base));
       if (!isLebanon(c)) {
         setDay(weekendDays(c)[0]);
         return;
@@ -188,10 +195,24 @@ function Home() {
   const toggle = (list: string[], set: (v: string[]) => void, v: string) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
+  const changeBase = (b: Base | null) => {
+    setBase(b);
+    try {
+      if (b)
+        localStorage.setItem(
+          "yalla:stay",
+          JSON.stringify({ city: encodeCity(city), base: encodeBase(b) }),
+        );
+      else localStorage.removeItem("yalla:stay");
+    } catch {
+      /* storage blocked: keep it for this visit only */
+    }
+  };
+
   const changeCity = (c: City) => {
     setCity(c);
     saveCity(c);
-    setBase(null);
+    changeBase(null);
     setWhere([]);
     if (!weekendDays(c).includes(day)) setDay(weekendDays(c)[0]);
   };
@@ -199,13 +220,18 @@ function Home() {
     // A city abroad, or a town picked in Lebanon (El Mina, Jounieh) or the current location:
     // the planner keeps every stop within the max drive of it.
     ...(leb && city.name === "Lebanon" ? {} : { city: encodeCity(city) }),
-    ...(mode === "trip"
-      ? { days: String(days), start, ...(base ? { base: encodeBase(base) } : {}) }
-      : {}),
+    ...(mode === "trip" ? { days: String(days), start } : {}),
+    // Where you're staying (hotel, Airbnb or house): plans start near it and the max drive counts from it.
+    ...(base ? { base: encodeBase(base) } : {}),
   };
 
   const ready =
-    text.trim().length > 0 || what.length > 0 || where.length > 0 || !leb || mode === "trip";
+    text.trim().length > 0 ||
+    what.length > 0 ||
+    where.length > 0 ||
+    !!base ||
+    !leb ||
+    mode === "trip";
 
   const go = () => {
     if (where[0]) localStorage.setItem("yalla:lastArea", where[0]);
@@ -310,7 +336,8 @@ function Home() {
           <div className="w-full">
             <label htmlFor="max-drive" className="text-sm font-medium">
               Up to {drive} min drive from{" "}
-              {where.filter((w) => !/anywhere/i.test(w)).join(" or ") ||
+              {base?.name ||
+                where.filter((w) => !/anywhere/i.test(w)).join(" or ") ||
                 (leb && city.name === "Lebanon" ? "the area you pick" : city.name)}
             </label>
             <input
@@ -349,12 +376,11 @@ function Home() {
           {[2, 3, 4, 5, 7].map((n) => (
             <Chip key={n} label={`${n} days`} on={days === n} onClick={() => setDays(n)} />
           ))}
-          <p className="mt-2 w-full text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Where are you staying?
-          </p>
-          <StayPicker base={base} near={city} onChange={setBase} />
         </div>
       ) : null}
+      <Row title="Where are you staying?">
+        <StayPicker base={base} near={city} onChange={changeBase} />
+      </Row>
       <Row title={mode === "trip" ? "Each day" : "Day"}>
         {mode === "weekend" &&
           DAYS.map((d) => <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />)}
