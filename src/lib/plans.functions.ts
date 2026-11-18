@@ -212,15 +212,37 @@ async function buildPlans(data: z.infer<typeof Input>, runId: string) {
   const dayOf = (k: number) => (trip ? (tripDays[k]?.name ?? data.day) : data.day);
   // Any city outside Lebanon: no hand-picked inventory, everything comes live from Google.
   const geo = data.city && !isLebanon(data.city) ? data.city : undefined;
+  // In Lebanon, a town picked in the city picker (El Mina, Jounieh) or the current location:
+  // plans are built around that point (docs/ai/compose-plans.md: max drive from where you are).
+  const spot =
+    data.city && isLebanon(data.city) && data.city.name !== "Lebanon" ? data.city : undefined;
   const known = geo ? [geo.name] : [...new Set([...AREAS, ...Object.keys(AREA_CENTER)])];
   let areas = geo ? [geo.name] : data.where.filter((a) => known.includes(a));
   const mentioned = areasIn(data.q, known);
   areas = [...new Set([...areas, ...mentioned])];
   // Saved-from-reels places pull their areas in when the user did not pick any.
+  if (spot && !areas.length) {
+    const near = known.filter((a) => {
+      const c =
+        AREA_CENTER[a] ??
+        (() => {
+          const ps = PLACES.filter((p) => p.area === a);
+          return ps.length
+            ? ([
+                ps.reduce((x, p) => x + p.lat, 0) / ps.length,
+                ps.reduce((x, p) => x + p.lng, 0) / ps.length,
+              ] as [number, number])
+            : null;
+        })();
+      return c && kmBetween(c, [spot.lat, spot.lng]) <= 15;
+    });
+    areas = near.length ? near : areasIn(spot.name, known);
+  }
   if (!areas.length && data.saved.length)
     areas = [...new Set(data.saved.map((p) => p.area).filter((a) => known.includes(a)))];
   if (
     !geo &&
+    !(spot && !data.where.length) &&
     (!areas.length ||
       data.where.includes("Anywhere within 45 min") ||
       data.where.includes("Road trip"))
@@ -229,23 +251,25 @@ async function buildPlans(data: z.infer<typeof Input>, runId: string) {
   // Centres of the chosen areas; include every place within ~25 km so small areas still get full plans.
   const centers = data.base
     ? [[data.base.lat, data.base.lng] as [number, number]]
-    : geo
-      ? [[geo.lat, geo.lng] as [number, number]]
-      : (areas
-          .map(
-            (a) =>
-              AREA_CENTER[a] ??
-              (() => {
-                const ps = PLACES.filter((p) => p.area === a);
-                return ps.length
-                  ? ([
-                      ps.reduce((x, p) => x + p.lat, 0) / ps.length,
-                      ps.reduce((x, p) => x + p.lng, 0) / ps.length,
-                    ] as [number, number])
-                  : null;
-              })(),
-          )
-          .filter(Boolean) as [number, number][]);
+    : spot
+      ? [[spot.lat, spot.lng] as [number, number]]
+      : geo
+        ? [[geo.lat, geo.lng] as [number, number]]
+        : (areas
+            .map(
+              (a) =>
+                AREA_CENTER[a] ??
+                (() => {
+                  const ps = PLACES.filter((p) => p.area === a);
+                  return ps.length
+                    ? ([
+                        ps.reduce((x, p) => x + p.lat, 0) / ps.length,
+                        ps.reduce((x, p) => x + p.lng, 0) / ps.length,
+                      ] as [number, number])
+                    : null;
+                })(),
+            )
+            .filter(Boolean) as [number, number][]);
   const radius = areas.length === AREAS.length ? 1e9 : 25;
   const inArea = PLACES.filter((p) => areas.includes(p.area) && p.cat !== "Stay");
   const roadTrip = data.where.includes("Road trip") || /road ?trip/i.test(data.q);
@@ -284,11 +308,13 @@ async function buildPlans(data: z.infer<typeof Input>, runId: string) {
   const catList = trip ? [...cats].reverse() : [...cats];
   const liveAreas = geo
     ? [geo.name]
-    : areas.length === AREAS.length
-      ? roadTrip
-        ? ["Batroun", "Douma", "Jbeil"]
-        : ["Beirut", "Batroun"]
-      : areas;
+    : spot && !data.where.length
+      ? [...new Set([...areas.slice(0, 1), spot.name])]
+      : areas.length === AREAS.length
+        ? roadTrip
+          ? ["Batroun", "Douma", "Jbeil"]
+          : ["Beirut", "Batroun"]
+        : areas;
   const avoidCats = new Set(data.avoid.map((a) => a.toLowerCase()));
   let live: Place[] = [];
   try {
@@ -530,16 +556,25 @@ const SUNSET_WORDS = /sunset|ghroub|ghurub|ghroob|maghreb|golden hour|غروب/i
 const VISITOR_WORDS = /safar|abroad|visiting|visitors|tourist|first time|جايين من السفر/i;
 
 async function composeDayOut(data: z.infer<typeof Input>, c: DayOutContext) {
-  const { pool, find, centers, areas, geo, st, en } = c;
+  const { find, centers, areas, geo, st, en } = c;
   const savedIds = new Set(data.saved.map((p) => p.id));
   const likes = [...data.prefs, ...data.what];
-  const scores = new Map(pool.map((p) => [p.id, scorePlace(p, { centers, likes, savedIds })]));
   // Far named areas (Tripoli and Beirut, say) make a long-drive day, like an explicit road trip.
   const spread =
     centers.length > 1 &&
     centers.some((a) => centers.some((b) => kmBetween(a, b) > 40)) &&
     areas.length < AREAS.length;
   const roadTrip = c.roadTrip || spread;
+  // Every stop within the max drive (30 min by default) of where the user wants to be: the picked
+  // area, town, current location or hotel. Not on a road trip, where the drive is the point.
+  const pool = roadTrip
+    ? c.pool
+    : c.pool.filter(
+        (p) =>
+          !centers.length ||
+          Math.min(...centers.map(([lat, lng]) => driveMins({ lat, lng }, p))) <= data.maxDrive,
+      );
+  const scores = new Map(pool.map((p) => [p.id, scorePlace(p, { centers, likes, savedIds })]));
   const date = nextDate(data.day);
   const here = centers[0] ?? [33.89, 35.5];
   const want = [

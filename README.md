@@ -40,7 +40,7 @@ Day-out plans are composed as described in [docs/ai/compose-plans.md](docs/ai/co
 | `YALLA_FREE_PER_DAY`                                 | `2`             | Free plans per browser per day. `0` turns the free limits off (tests)                                                                                           |
 | `YALLA_FREE_PER_MONTH`                               | `5`             | Free plans per browser per 30 days                                                                                                                              |
 | `YALLA_DAILY_CAP_USD`                                | `20`            | Daily AI spend cap (needs the database). Alerts at 50% and 80% are a `spend_alert` event and a server log line; at 100% plans use plain text until midnight UTC |
-| `YALLA_CHOOSE_TIMEOUT_MS` / `YALLA_WRITE_TIMEOUT_MS` | `6000` / `5000` | Time limits for the two AI requests before the plain-text fallback                                                                                              |
+| `YALLA_CHOOSE_TIMEOUT_MS` / `YALLA_WRITE_TIMEOUT_MS` | `6000` / `9000` | Time limits for the two AI requests before the plain-text fallback                                                                                              |
 
 The exam for this feature: `evals/compose/` (see Step 9 in the doc).
 

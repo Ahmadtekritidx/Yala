@@ -59,7 +59,13 @@ export const KNOWN_AREAS = [...new Set([...AREAS, ...Object.keys(AREA_CENTER)])]
 
 // Areas named in the text, from a list of known names. Two common alternate spellings are folded in.
 export const areasIn = (text: string, known: string[] = KNOWN_AREAS) => {
-  const t = text.toLowerCase().replace("jouniye", "jounieh").replace("byblos", "jbeil");
+  const t = text
+    .toLowerCase()
+    .replace("jouniye", "jounieh")
+    .replace("byblos", "jbeil")
+    .replace("batrun", "batroun")
+    // El Mina is Tripoli's port town; Trablos / Tarablus are Tripoli in Arabic.
+    .replace(/\b(el[ -]|al[ -])?mina\b|\btrablo?s\b|\btarablus\b|طرابلس|الميناء/g, "tripoli");
   return known.filter((a) => t.includes(a.toLowerCase()));
 };
 

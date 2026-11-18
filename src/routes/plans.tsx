@@ -176,7 +176,8 @@ function PlansPage() {
         ...(/^\d{4}-\d{2}-\d{2}$/.test(s.start) ? { start: s.start } : {}),
         ...(() => {
           const c = decodeCity(s.city);
-          return c && !isLebanon(c) ? { city: c } : {};
+          // Abroad: the city. In Lebanon: a picked town or the current location, to plan around it.
+          return c && (!isLebanon(c) || c.name !== "Lebanon") ? { city: c } : {};
         })(),
       },
     })

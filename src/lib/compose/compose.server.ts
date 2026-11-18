@@ -12,7 +12,7 @@ import { PLANS_PER_REQUEST, SHORT_WINDOW_MINUTES, MIN_PLANS_SHORT_WINDOW } from 
 
 // Step 8: about 3 s per AI step was the budget; measured calls need a little more headroom.
 const CHOOSE_TIMEOUT_MS = Number(process.env["YALLA_CHOOSE_TIMEOUT_MS"] ?? 6000);
-const WRITE_TIMEOUT_MS = Number(process.env["YALLA_WRITE_TIMEOUT_MS"] ?? 5000);
+const WRITE_TIMEOUT_MS = Number(process.env["YALLA_WRITE_TIMEOUT_MS"] ?? 9000);
 export const COMPOSE_PROMPT_VERSION = "compose-v1";
 
 export type ComposedStop = { placeId: string; time: number; reason: string };
@@ -107,7 +107,8 @@ ${p.route.stops
   .join("\n")}`,
   )
   .join("\n")}`;
-  return askJSON(system, user, WriteOut, "medium", {
+  // Low effort: short copy from given facts needs little thinking, and medium timed out live.
+  return askJSON(system, user, WriteOut, "low", {
     feature: "plans.write",
     runId: req.runId,
     promptVersion: COMPOSE_PROMPT_VERSION,
