@@ -450,7 +450,7 @@ First live exam, 3 tests:
 | 9 Romantic sunset   | 14.9 s       | 8.1 s     | 24/28         | 28/28      |
 | 15 Sea and mountain | 28.7 s       | 9.3 s     | 24/25         | 22/25      |
 
-Test 15 showed requested categories were only a bonus and the variety step could drop the only sea view; fixed (routes covering everything asked for come first). Still open: speed is about 9 s against the 5 s target; the database is not on yet (Supabase blocked by overdue invoices on the Figure8 DX Platform organization).
+Test 15 showed requested categories were only a bonus and the variety step could drop the only sea view; fixed (routes covering everything asked for come first). Still open: speed is about 9 s against the 5 s target; the database is deferred (decided 2026-11-18): no logs, saved feedback or daily cap until it is switched on; the code is ready and turns on with two Vercel secrets.
 
 ## Next
 
