@@ -158,6 +158,8 @@ function Home() {
   };
   const [recent, setRecent] = useState<Recent[]>([]);
   const [ask, setAsk] = useState<PendingAsk | null>(null);
+  // Max drive from the chosen place, in minutes: nothing is suggested further away (the radius).
+  const [drive, setDrive] = useState(30);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [city, setCity] = useState<City>(LEBANON);
   const leb = isLebanon(city);
@@ -170,6 +172,7 @@ function Home() {
       setAsk(dueAsk());
       const pr = loadProfile();
       setProfile(pr);
+      if (pr?.maxDrive) setDrive(pr.maxDrive);
       const c = loadCity();
       setCity(c);
       if (!isLebanon(c)) {
@@ -216,6 +219,7 @@ function Home() {
         end,
         // Read at tap time too, so a tap before the profile loads still respects it.
         ...profileSearch(profile ?? loadProfile()),
+        drive: String(drive),
         ...cityParam,
       },
     });
@@ -271,6 +275,7 @@ function Home() {
                   end,
                   // Read at tap time too, so a tap before the profile loads still respects it.
                   ...profileSearch(profile ?? loadProfile()),
+                  drive: String(drive),
                   ...cityParam,
                 },
               })
@@ -299,6 +304,30 @@ function Home() {
             />
           ))}
       </Row>
+      {mode === "weekend" && (
+        <Row title="How far">
+          <div className="w-full">
+            <label htmlFor="max-drive" className="text-sm font-medium">
+              Up to {drive} min drive from{" "}
+              {where.filter((w) => !/anywhere/i.test(w)).join(" or ") ||
+                (leb && city.name === "Lebanon" ? "the area you pick" : city.name)}
+            </label>
+            <input
+              id="max-drive"
+              type="range"
+              min={10}
+              max={90}
+              step={5}
+              value={drive}
+              onChange={(e) => setDrive(Number(e.target.value))}
+              className="mt-2 w-full accent-[var(--primary)]"
+            />
+            <p className="text-xs text-muted-foreground">
+              Nothing further away is suggested, and drives between stops stay under it too.
+            </p>
+          </div>
+        </Row>
+      )}
       <Row title="When">
         <Chip label="This weekend" on={mode === "weekend"} onClick={() => setTrip(false)} />
         <Chip label="A trip (several days)" on={mode === "trip"} onClick={() => setTrip(true)} />
