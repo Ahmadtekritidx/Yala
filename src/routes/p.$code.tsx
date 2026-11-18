@@ -3,7 +3,8 @@ import { mealName } from "@/lib/rules";
 import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
 import { track } from "@/lib/track";
-import { VibeStrip } from "@/components/VibeStrip";
+import { Globe, Instagram, Navigation, Star } from "lucide-react";
+import { ICON_BTN, VibeStrip } from "@/components/VibeStrip";
 import { PlanStory } from "@/components/PlanStory";
 import { byId, fmt, driveMins, registerPlaces, type Place } from "@/lib/places";
 
@@ -213,42 +214,49 @@ function SharedPlan() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {"$".repeat(pl.price)} · ★ {pl.rating} · {pl.area}
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <a
                   href={`https://www.google.com/maps/dir/?api=1&destination=${pl.live ? `${pl.lat},${pl.lng}` : q}&travelmode=driving`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium hover:border-primary"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-full pop press bg-primary px-5 text-sm font-bold text-primary-foreground"
                 >
-                  Directions ↗
+                  <Navigation className="h-4 w-4" aria-hidden />
+                  Directions
                 </a>
                 <a
                   href={pl.insta ?? insta(pl.name)}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium hover:border-primary"
+                  aria-label={pl.insta ? "Instagram" : "Find on Instagram"}
+                  title={pl.insta ? "Instagram" : "Find on Instagram"}
+                  className={ICON_BTN}
                 >
-                  {pl.insta ? "Insta ↗" : "Find on Insta ↗"}
+                  <Instagram className="h-5 w-5" aria-hidden />
+                </a>
+                <a
+                  href={pl.maps ?? mapsPlace(pl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Reviews"
+                  title="Reviews"
+                  className={ICON_BTN}
+                >
+                  <Star className="h-5 w-5" aria-hidden />
                 </a>
                 {pl.web && !pl.web.includes("instagram.com") && (
                   <a
                     href={pl.web}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium"
+                    aria-label="Website"
+                    title="Website"
+                    className={ICON_BTN}
                   >
-                    Site
+                    <Globe className="h-5 w-5" aria-hidden />
                   </a>
                 )}
-                <a
-                  href={pl.maps ?? mapsPlace(pl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-h-11 items-center rounded-full pop press bg-card px-4 text-sm font-medium"
-                >
-                  Reviews
-                </a>
-                <VibeStrip place={pl} />
+                <VibeStrip place={pl} iconOnly />
               </div>
             </li>
           );
