@@ -196,7 +196,9 @@ function Home() {
     if (!weekendDays(c).includes(day)) setDay(weekendDays(c)[0]);
   };
   const cityParam = {
-    ...(leb ? {} : { city: encodeCity(city) }),
+    // A city abroad, or a town picked in Lebanon (El Mina, Jounieh) or the current location:
+    // the planner keeps every stop within the max drive of it.
+    ...(leb && city.name === "Lebanon" ? {} : { city: encodeCity(city) }),
     ...(mode === "trip"
       ? { days: String(days), start, ...(base ? { base: encodeBase(base) } : {}) }
       : {}),
