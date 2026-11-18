@@ -544,7 +544,13 @@ async function composeDayOut(data: z.infer<typeof Input>, c: DayOutContext) {
   const here = centers[0] ?? [33.89, 35.5];
   const want = [
     ...new Set([
-      ...data.what.map((w) => WHAT_CATEGORY[w]).filter((x): x is Category => !!x),
+      ...data.what
+        .map(
+          (w) =>
+            WHAT_CATEGORY[w] ??
+            ((CATEGORIES as string[]).includes(w) ? (w as Category) : undefined),
+        )
+        .filter((x): x is Category => !!x),
       ...categoriesIn(data.q.toLowerCase()),
     ]),
   ];

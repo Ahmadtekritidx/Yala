@@ -131,3 +131,29 @@ assert.equal(new Set(keys).size, keys.length);
 console.log(
   `compose routes: every route passes the exam's Yes/No checks (${diverse.length} diverse routes)`,
 );
+
+// What was asked for comes first: "sea and mountain" puts routes with both on top.
+{
+  const hills = [1, 2, 3].map((k) =>
+    place(`Hill ${k}`, "Scenic stop", "Open 24 hours", 0.01 * k, 0.01),
+  );
+  const pool2 = [...pool, ...hills];
+  const c = { ...card, time: "09:00", end: "21:00" };
+  const base = ctxFor(c);
+  const ctx = {
+    ...base,
+    start: 9 * 60,
+    end: 21 * 60,
+    want: ["Sea view", "Hike"] as Place["cat"][],
+    scores: new Map(
+      pool2.map((p) => [p.id, scorePlace(p, { centers: [], likes: [], savedIds: new Set() })]),
+    ),
+  };
+  const top = pickDiverse(buildRoutes(pool2, ctx), 3, new Set(), ctx.want);
+  assert.equal(top.length, 3);
+  for (const r of top) {
+    const cats = r.stops.map((s) => s.place.cat);
+    assert.ok(cats.includes("Sea view") && cats.includes("Scenic stop"), cats.join());
+  }
+}
+console.log("compose routes: asked-for categories come first");

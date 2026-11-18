@@ -140,7 +140,7 @@ export async function composeDay(
   overnight: boolean,
 ): Promise<ComposeResult | { error: string; routesFound: number }> {
   const all = buildRoutes(pool, ctx);
-  const options = pickDiverse(all, 10, ctx.savedIds).map((r) =>
+  const options = pickDiverse(all, 10, ctx.savedIds, ctx.want).map((r) =>
     overnight ? addStay(r, pool, ctx) : r,
   );
   const short = ctx.end - ctx.start <= SHORT_WINDOW_MINUTES;

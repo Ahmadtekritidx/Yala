@@ -59,10 +59,17 @@ export function arrivalFor(p: Place, ready: number, ctx: RouteContext): number |
   return null;
 }
 
+/** How many of the asked-for categories a route covers. A mountain view counts for a hike. */
+export function coverage(stops: RouteStop[], want: Category[]) {
+  const cats = new Set(stops.map((st) => st.place.cat));
+  return want.filter((c) => cats.has(c) || (c === "Hike" && cats.has("Scenic stop"))).length;
+}
+
 function routeScore(stops: RouteStop[], drive: number, wait: number, ctx: RouteContext) {
   let s = stops.reduce((a, st) => a + (ctx.scores.get(st.place.id) ?? 0), 0);
   const cats = new Set(stops.map((st) => st.place.cat));
-  s += ctx.want.filter((c) => cats.has(c)).length * 0.8;
+  // What the user asked for weighs more than a slightly better rating (A11: everything asked appears).
+  s += coverage(stops, ctx.want) * 2;
   s += stops.filter((st) => ctx.savedIds.has(st.place.id)).length * 1.5;
   if (ctx.wantsSunset && cats.has("Sea view")) s += 1;
   return s - drive * 0.015 - wait * 0.005;
@@ -108,18 +115,16 @@ export function buildRoutes(pool: Place[], ctx: RouteContext): Route[] {
     if (depth + 1 >= lo) done.push(...beam);
     if (!beam.length) break;
   }
-  return done.sort((a, b) => b.score - a.score);
+  // Routes with everything asked for come first, then the best scored.
+  return done.sort(
+    (a, b) => coverage(b.stops, ctx.want) - coverage(a.stops, ctx.want) || b.score - a.score,
+  );
 }
 
-/**
- * Up to `n` routes that differ: each shares at most `maxShared` places with every route kept.
- * When the user saved places, only routes with a saved place are kept (when there are any), and
- * saved places don't count as shared, so every plan can include one.
- */
-export function pickDiverse(routes: Route[], n = 10, savedIds: Set<string> = new Set()): Route[] {
-  const withSaved = routes.filter((r) => r.stops.some((st) => savedIds.has(st.place.id)));
-  const from = withSaved.length ? withSaved : routes;
+/** Up to `n` routes that share as few places as possible (saved places don't count as shared). */
+function diverse(from: Route[], n: number, savedIds: Set<string>): Route[] {
   const shape = (r: Route) => r.stops.map((st) => st.place.cat).join();
+  let best: Route[] = [];
   for (const maxShared of [0, 1, 2]) {
     const kept: Route[] = [];
     for (const r of from) {
@@ -133,9 +138,35 @@ export function pickDiverse(routes: Route[], n = 10, savedIds: Set<string> = new
       if (ok) kept.push(r);
       if (kept.length >= n) return kept;
     }
-    if (kept.length >= Math.min(n, 3) || maxShared === 2) return kept;
+    if (kept.length > best.length) best = kept;
+    if (kept.length >= Math.min(n, 3)) return kept;
   }
-  return [];
+  return best;
+}
+
+/**
+ * Up to `n` routes for the AI to choose from, best first. Routes with a saved place come first when
+ * there are any, then those covering everything the user asked for, and only then variety: a
+ * requested sea view beats three plans that share nothing.
+ */
+export function pickDiverse(
+  routes: Route[],
+  n = 10,
+  savedIds: Set<string> = new Set(),
+  want: Category[] = [],
+): Route[] {
+  const withSaved = routes.filter((r) => r.stops.some((st) => savedIds.has(st.place.id)));
+  const from = withSaved.length ? withSaved : routes;
+  const top = Math.max(0, ...from.map((r) => coverage(r.stops, want)));
+  const full = from.filter((r) => coverage(r.stops, want) === top);
+  const kept = diverse(full, n, savedIds);
+  if (kept.length >= n) return kept;
+  const rest = diverse(
+    from.filter((r) => !full.includes(r)),
+    n - kept.length,
+    savedIds,
+  );
+  return [...kept, ...rest];
 }
 
 /** For an overnight plan: the best Stay reachable after the last stop, or null. */
