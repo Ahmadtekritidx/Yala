@@ -39,7 +39,8 @@ export type ComposeResult = {
   /** Honest notes for the user (Step 7), e.g. "Quick version". */
   notices: string[];
   routesFound: number;
-  ai: { choose: "ai" | "fallback"; write: "ai" | "fallback" };
+  /** Which AI steps worked; `issue` says briefly why a step fell back (no prompts, no user data). */
+  ai: { choose: "ai" | "fallback"; write: "ai" | "fallback"; issue?: string };
 };
 
 const hhmm = (m: number) =>
@@ -149,7 +150,9 @@ export async function composeDay(
     return { error: "not enough", routesFound: options.length };
 
   const notices: string[] = [];
-  const ai = { choose: "fallback" as "ai" | "fallback", write: "fallback" as "ai" | "fallback" };
+  const ai: ComposeResult["ai"] = { choose: "fallback", write: "fallback" };
+  const note = (step: string, why: string) =>
+    (ai.issue = `${ai.issue ? ai.issue + "; " : ""}${step}: ${why.slice(0, 160)}`);
   // Off switch, or today's AI spend at the cap: the plain "quick version" (Step 8).
   const useAi = aiConfigured() && !aiSwitchedOff() && !(await overDailyCap());
 
@@ -176,7 +179,7 @@ export async function composeDay(
           chosen.push({ route: r, theme: "", why: "" });
       picked = chosen;
       ai.choose = "ai";
-    }
+    } else note("choose", `${res.kind} ${res.error}`);
   } else if (useAi) ai.choose = "ai"; // nothing to choose between
 
   // D4: the AI writes words by stop position; a plan whose answer doesn't fit gets plain text.
@@ -197,7 +200,8 @@ export async function composeDay(
         };
       });
       if (good === texts.length) ai.write = "ai";
-    }
+      else note("write", `${texts.length - good} plan(s) did not fit the stops`);
+    } else note("write", `${res.kind} ${res.error}`);
   }
   if (useAi && (ai.choose === "fallback" || ai.write === "fallback"))
     notices.push("Quick version: some descriptions are simpler right now.");
