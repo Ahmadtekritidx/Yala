@@ -9,6 +9,7 @@ import {
   EMPTY,
   LIKES,
   STAYS,
+  cleanOwn,
   loadProfile,
   saveProfile,
   type Profile,
@@ -38,6 +39,70 @@ function Chip({ label, on, onClick }: { label: string; on: boolean; onClick: () 
     >
       {label}
     </button>
+  );
+}
+
+// Your own items: each shows as a chip with ✕ to remove, plus a box to add a new one.
+function AddOwn({
+  items,
+  preset,
+  placeholder,
+  onAdd,
+  onRemove,
+}: {
+  items: string[];
+  preset: string[];
+  placeholder: string;
+  onAdd: (v: string) => void;
+  onRemove: (v: string) => void;
+}) {
+  const [v, setV] = useState("");
+  const own = items.filter((x) => !preset.includes(x));
+  const add = () => {
+    const x = cleanOwn(v);
+    if (x && !items.some((i) => i.toLowerCase() === x.toLowerCase())) onAdd(x);
+    setV("");
+  };
+  return (
+    <>
+      {own.map((x) => (
+        <span
+          key={x}
+          className="flex min-h-11 items-center gap-1 rounded-full border-2 border-primary bg-primary pl-4 pr-1 text-sm font-medium text-primary-foreground"
+        >
+          {x}
+          <button
+            type="button"
+            onClick={() => onRemove(x)}
+            aria-label={`Remove ${x}`}
+            className="min-h-9 min-w-9 rounded-full font-bold hover:bg-black/10"
+          >
+            ✕
+          </button>
+        </span>
+      ))}
+      <div className="flex w-full gap-2">
+        <input
+          value={v}
+          maxLength={30}
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") add();
+          }}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          className="min-h-11 min-w-0 flex-1 rounded-full pop bg-card px-4 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!cleanOwn(v)}
+          className="min-h-11 rounded-full pop press bg-card px-4 text-sm font-bold disabled:opacity-40"
+        >
+          + Add
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -204,12 +269,26 @@ function ProfilePage() {
         {LIKES.map((d) => (
           <Chip key={d} label={d} on={p.likes.includes(d)} onClick={() => toggle("likes", d)} />
         ))}
+        <AddOwn
+          items={p.likes}
+          preset={LIKES}
+          placeholder="Add your own, e.g. Rooftops"
+          onAdd={(v) => set("likes", [...p.likes, v])}
+          onRemove={(v) => toggle("likes", v)}
+        />
       </Section>
 
       <Section title="Not into" hint="We never put these in your plans.">
         {AVOIDS.map((d) => (
           <Chip key={d} label={d} on={p.avoid.includes(d)} onClick={() => toggle("avoid", d)} />
         ))}
+        <AddOwn
+          items={p.avoid}
+          preset={AVOIDS}
+          placeholder="Add your own, e.g. Loud bars"
+          onAdd={(v) => set("avoid", [...p.avoid, v])}
+          onRemove={(v) => toggle("avoid", v)}
+        />
       </Section>
 
       <Section title="Stay overnight?">

@@ -49,6 +49,10 @@ export const EMPTY: Profile = {
   stay: "No",
 };
 
+// Your own words for "You love" / "Not into": short, no commas (they separate items in links).
+export const cleanOwn = (s: string) =>
+  s.replace(/[,|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 30);
+
 const KEY = "yalla:profile";
 
 export function loadProfile(): Profile | null {
@@ -75,8 +79,9 @@ export function profileSearch(p: Profile | null) {
     people: p.people,
     pace: p.pace,
     stay: p.stay,
-    avoid: p.avoid.join(","),
-    prefs: [...p.diet, ...p.likes].join(","),
+    // The planner takes at most 12 of each.
+    avoid: p.avoid.slice(0, 12).join(","),
+    prefs: [...p.diet, ...p.likes].slice(0, 12).join(","),
     budget: String(p.budget),
     drive: String(p.maxDrive),
   };
