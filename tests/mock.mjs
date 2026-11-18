@@ -125,6 +125,30 @@ function plan(prompt) {
     })),
   };
 }
+// Compose plans, request 1: pick the first 3 numbered routes.
+function choosePlans(prompt) {
+  const n = (prompt.match(/^\d+\. /gm) ?? []).length;
+  const themes = ["Food first", "Slow and scenic", "Evening views"];
+  return {
+    plans: Array.from({ length: Math.min(3, n) }, (_, i) => ({
+      route: i + 1,
+      theme: themes[i],
+      why: "Easy pace with good food for this group",
+    })),
+  };
+}
+// Compose plans, request 2: one title, vibe and reason per stop, by position.
+function writePlans(prompt) {
+  const blocks = prompt.split(/^Plan \d+,/m).slice(1);
+  return {
+    plans: blocks.map((b, i) => ({
+      title: ["Yalla Batroun", "Slow Saturday", "Sunset loop"][i] ?? "Day out",
+      vibe: "Eat, wander, then views",
+      reasons: (b.match(/^ {2}stop \d+:/gm) ?? []).map((_, k) => `Great stop number ${k + 1}`),
+    })),
+  };
+}
+
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   if (u.includes("lovable.dev")) throw new Error("Lovable service called: " + u);
@@ -159,11 +183,22 @@ globalThis.fetch = async (url, init = {}) => {
       );
     const b = JSON.parse(init.body);
     const prompt = b.messages.at(-1).content;
-    if (b.model !== "claude-opus-5-5" || b.fallbacks !== "default" || !b.output_config?.format)
+    // Opus (status, trips) and Sonnet (choose) carry the server-side fallback; Haiku (write) can't.
+    const okModel =
+      (b.model === "claude-opus-5-5" && b.fallbacks === "default") ||
+      (b.model === "claude-sonnet-5-5" && b.fallbacks === "default") ||
+      (b.model === "claude-haiku-5-5" && b.fallbacks === undefined);
+    if (!okModel || !b.output_config?.format)
       throw new Error(
         "unexpected request " + JSON.stringify({ model: b.model, fallbacks: b.fallbacks }),
       );
-    const out = prompt.startsWith("Return {") ? { ok: true } : plan(prompt);
+    const out = prompt.startsWith("Return {")
+      ? { ok: true }
+      : b.model === "claude-sonnet-5-5"
+        ? choosePlans(prompt)
+        : b.model === "claude-haiku-5-5"
+          ? writePlans(prompt)
+          : plan(prompt);
     return new Response(
       JSON.stringify({
         id: "msg_test",

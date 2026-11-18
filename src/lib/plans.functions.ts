@@ -25,6 +25,12 @@ import { aiConfigured, aiStatus, askJSON, PlanOut } from "./ai.server";
 import { logEvents } from "./log.server";
 import { storePing } from "./store.server";
 import { areasIn, categoriesIn, wantsHike } from "./intent";
+import { composeDay } from "./compose/compose.server";
+import { scorePlace } from "./compose/score";
+import { localSunset } from "./compose/sun";
+import { dietOf } from "./alternatives";
+import { ROAD_TRIP_MAX_DRIVE } from "./rules";
+import { nextDate } from "./share";
 
 // Links sent by the browser: keep only plain web links.
 const webLink = z
@@ -116,6 +122,8 @@ export type Plan = {
   title: string;
   vibe: string;
   stops: Stop[];
+  /** Why this plan suits the group, from the Choose step (day-out plans). */
+  why?: string | undefined;
   day?: string | undefined;
   date?: string | undefined;
   base?: { name: string; lat: number; lng: number } | undefined;
@@ -162,7 +170,6 @@ export const generatePlans = createServerFn({ method: "POST" })
   });
 
 async function buildPlans(data: z.infer<typeof Input>, runId: string) {
-  if (!aiConfigured()) return { error: "The planner isn't switched on yet (missing AI key)." };
   const mins = await rateLimit("plans", LIMIT, WINDOW);
   if (mins) return { error: `Easy habibi, that's a lot of plans. Try again in ${mins} min.` };
   // Trip mode: one plan per day from the start date, each with its own weekday (opening hours differ).
@@ -301,6 +308,23 @@ async function buildPlans(data: z.infer<typeof Input>, runId: string) {
   // This request's places first: saved places live here only, never in the shared registry.
   const local = new Map(pool.map((p) => [p.id, p]));
   const find = (id: string) => local.get(id) ?? byId(id);
+
+  // Day out: the new composer (docs/ai/compose-plans.md). Code builds valid routes, AI chooses and
+  // writes, code checks; it still works, more plainly, with the AI off. Trips keep the path below.
+  if (!trip)
+    return composeDayOut(data, {
+      pool,
+      find,
+      centers,
+      areas,
+      geo,
+      roadTrip,
+      st,
+      en,
+      fromGoogle,
+      runId,
+    });
+  if (!aiConfigured()) return { error: "The planner isn't switched on yet (missing AI key)." };
   const candidates = pool.map((p) => ({
     id: p.id,
     name: p.name,
@@ -452,6 +476,130 @@ SAVED: the user saved these from reels they loved: ${JSON.stringify(data.saved.f
     }
   }
   return { error: "Our friend who knows every spot is not answering. Try again?" };
+}
+
+type DayOutContext = {
+  pool: Place[];
+  find: (id: string) => Place | undefined;
+  centers: [number, number][];
+  areas: string[];
+  geo: { name: string; country: string; lat: number; lng: number } | undefined;
+  roadTrip: boolean;
+  st: number;
+  en: number;
+  fromGoogle: Set<Place>;
+  runId: string;
+};
+
+const WHAT_CATEGORY: Record<string, Category> = {
+  Coffee: "Specialty coffee",
+  Brunch: "Brunch",
+  Lunch: "Lunch",
+  Dinner: "Dinner",
+  Dessert: "Dessert",
+};
+const SUNSET_WORDS = /sunset|ghroub|ghurub|ghroob|maghreb|golden hour|غروب/i;
+const VISITOR_WORDS = /safar|abroad|visiting|visitors|tourist|first time|جايين من السفر/i;
+
+async function composeDayOut(data: z.infer<typeof Input>, c: DayOutContext) {
+  const { pool, find, centers, areas, geo, st, en } = c;
+  const savedIds = new Set(data.saved.map((p) => p.id));
+  const likes = [...data.prefs, ...data.what];
+  const scores = new Map(pool.map((p) => [p.id, scorePlace(p, { centers, likes, savedIds })]));
+  // Far named areas (Tripoli and Beirut, say) make a long-drive day, like an explicit road trip.
+  const spread =
+    centers.length > 1 &&
+    centers.some((a) => centers.some((b) => kmBetween(a, b) > 40)) &&
+    areas.length < AREAS.length;
+  const roadTrip = c.roadTrip || spread;
+  const date = nextDate(data.day);
+  const here = centers[0] ?? [33.89, 35.5];
+  const want = [
+    ...new Set([
+      ...data.what.map((w) => WHAT_CATEGORY[w]).filter((x): x is Category => !!x),
+      ...categoriesIn(data.q.toLowerCase()),
+    ]),
+  ];
+  const diet = dietOf(data.prefs);
+  const area = geo
+    ? geo.name
+    : areas.length === AREAS.length
+      ? "Lebanon"
+      : areas.slice(0, 2).join(" and ");
+  const r = await composeDay(
+    pool,
+    {
+      rules: { day: data.day, budget: data.budget, avoid: data.avoid, diet },
+      start: st,
+      end: Math.min(en, 24 * 60),
+      pace: data.pace,
+      maxDrive: roadTrip ? ROAD_TRIP_MAX_DRIVE : data.maxDrive,
+      roadTrip,
+      sunset: localSunset(here[0], here[1], date, geo ? undefined : "Asia/Beirut"),
+      wantsSunset: SUNSET_WORDS.test(data.q),
+      want,
+      savedIds,
+      scores,
+    },
+    {
+      q: data.q,
+      region: geo ? `${geo.name}, ${geo.country}` : "Lebanon",
+      area,
+      day: data.day,
+      people: data.people,
+      pace: data.pace,
+      budget: data.budget,
+      prefs: data.prefs,
+      avoid: data.avoid,
+      likes,
+      visitors: VISITOR_WORDS.test(data.q),
+      dishes: new Map(data.saved.filter((p) => p.dish).map((p) => [p.id, p.dish!])),
+      runId: c.runId,
+    },
+    data.stay !== "No",
+  );
+  if ("error" in r) {
+    const open = pool.filter((p) => p.cat !== "Stay").length;
+    return {
+      error:
+        open < 6
+          ? `Only ${open} spots are open in ${area} on ${data.day}. Try a nearby area or another day?`
+          : `We couldn't fit 3 good plans between ${data.time} and ${data.end ?? "the evening"} in ${area}. Try a longer time window or a nearby area?`,
+    };
+  }
+  const notices = [...r.notices];
+  const meals = (p: (typeof r.plans)[number]) =>
+    p.stops.some((s) => /^(Breakfast|Brunch|Lunch|Dinner)$/.test(find(s.placeId)?.cat ?? ""));
+  if (diet && !r.plans.some(meals))
+    notices.push(
+      `We couldn't find ${diet} spots for a meal here, so these plans skip meals. Want to try Beirut?`,
+    );
+  if (roadTrip) {
+    const drive = Math.max(
+      ...r.plans.map((p) =>
+        p.stops
+          .slice(1)
+          .reduce((a, s, i) => a + driveMins(find(p.stops[i]!.placeId)!, find(s.placeId)!), 0),
+      ),
+    );
+    if (drive >= 60)
+      notices.push(
+        `About ${Math.floor(drive / 60)}h${String(drive % 60).padStart(2, "0")} of driving on the longest plan.`,
+      );
+  }
+  const plans: Plan[] = r.plans.map((p) => ({
+    title: p.title,
+    vibe: p.vibe,
+    why: p.why || undefined,
+    stops: p.stops,
+    ...(data.base ? { base: data.base } : {}),
+  }));
+  const used = [...new Set(plans.flatMap((p) => p.stops.map((s) => s.placeId)))]
+    .map((id) => find(id)!)
+    .filter((p) => p.live);
+  await findInstas(used);
+  registerGooglePlaces(used.filter((p) => c.fromGoogle.has(p)));
+  return { plans, places: pool.filter((p) => p.live), notices, ai: r.ai };
 }
 
 // /status is public and each check makes a paid Claude call and a Google search,

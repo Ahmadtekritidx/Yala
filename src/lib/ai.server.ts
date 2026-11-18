@@ -8,11 +8,19 @@ import { costUsd } from "./pricing";
 import { sha256 } from "./store.server";
 
 export const PLANNER_MODEL = "claude-opus-5-5";
+// Compose plans (docs/ai/compose-plans.md, Step 6): a mid-size model chooses, a small one writes.
+export const CHOOSE_MODEL = "claude-sonnet-5-5";
+export const WRITE_MODEL = "claude-haiku-5-5";
+
+// Emergency off switch (Step 8): YALLA_AI_OFF=1 stops every AI call; plans fall back to code.
+export const aiSwitchedOff = () => process.env["YALLA_AI_OFF"] === "1";
 
 export const aiConfigured = () => !!process.env["ANTHROPIC_API_KEY"];
 
-const client = () =>
-  new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"], timeout: 60_000, maxRetries: 1 });
+const client = (timeoutMs = 60_000, maxRetries = 1) =>
+  new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"], timeout: timeoutMs, maxRetries });
+// Server-side refusal fallback exists on Opus, Sonnet and Fable, not on Haiku.
+const hasServerFallback = (model: string) => !/haiku/.test(model);
 
 // The shape the planner must return. Enforced by Claude's structured output, then checked again by our code.
 export const PlanOut = z.object({
@@ -36,6 +44,8 @@ export type CallMeta = {
   runId?: string; // joins this call to the product events of the same request
   promptVersion?: string; // bump when the prompt changes, so results can be compared per version
   input?: string; // the user's own words, kept for building eval items (not the full prompt)
+  model?: string; // defaults to PLANNER_MODEL
+  timeoutMs?: number; // a time limit for this call; with one, the SDK does not retry on its own
 };
 
 export async function askJSON<T>(
@@ -45,12 +55,13 @@ export async function askJSON<T>(
   effort: "low" | "medium" | "high" = "medium",
   meta: CallMeta = { feature: "other" },
 ): Promise<AiResult<T>> {
+  if (aiSwitchedOff()) return { ok: false, kind: "other", error: "AI switched off (YALLA_AI_OFF)" };
   if (!aiConfigured())
     return { ok: false, kind: "key", error: "Missing secret: ANTHROPIC_API_KEY" };
   const started = Date.now();
-  const result = await callClaude(system, user, schema, effort);
+  const result = await callClaude(system, user, schema, effort, meta);
   const { res } = result;
-  const model = res?.model ?? PLANNER_MODEL;
+  const model = res?.model ?? meta.model ?? PLANNER_MODEL;
   const out = result.out;
   await logAiCall({
     run_id: meta.runId ?? null,
@@ -88,17 +99,20 @@ async function callClaude<T>(
   user: string,
   schema: z.ZodType<T>,
   effort: "low" | "medium" | "high",
+  call: CallMeta,
 ): Promise<{
   res?: { model: string; stop_reason: string | null; usage: Usage };
   out: AiResult<T>;
 }> {
   try {
-    const res = await client().beta.messages.parse({
-      model: PLANNER_MODEL,
-      max_tokens: 16000,
+    const model = call.model ?? PLANNER_MODEL;
+    const res = await client(call.timeoutMs ?? 60_000, call.timeoutMs ? 0 : 1).beta.messages.parse({
+      model,
+      max_tokens: call.timeoutMs ? 4000 : 16000,
       // If Claude declines for a policy reason, Anthropic re-runs the request on its recommended fallback model
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      ...(hasServerFallback(model)
+        ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
+        : {}),
       system,
       messages: [{ role: "user", content: user }],
       output_config: { effort, format: betaZodOutputFormat(schema) },
@@ -118,6 +132,8 @@ async function callClaude<T>(
       };
     return { res: meta, out: { ok: true, data: res.parsed_output as T } };
   } catch (e) {
+    if (e instanceof Anthropic.APIConnectionTimeoutError)
+      return { out: { ok: false, kind: "busy", error: "timed out" } };
     if (e instanceof Anthropic.AuthenticationError)
       return { out: { ok: false, kind: "key", error: "ANTHROPIC_API_KEY was rejected" } };
     if (e instanceof Anthropic.RateLimitError)
