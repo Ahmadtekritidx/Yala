@@ -142,7 +142,7 @@ function writePlans(prompt) {
   const blocks = prompt.split(/^Plan \d+,/m).slice(1);
   return {
     plans: blocks.map((b, i) => ({
-      title: ["Yalla Batroun", "Slow Saturday", "Sunset loop"][i] ?? "Day out",
+      title: ["Yalla day out", "Slow Saturday", "Sunset loop"][i] ?? "Day out",
       vibe: "Eat, wander, then views",
       reasons: (b.match(/^ {2}stop \d+:/gm) ?? []).map((_, k) => `Great stop number ${k + 1}`),
     })),

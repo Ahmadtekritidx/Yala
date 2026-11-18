@@ -7,6 +7,7 @@ import { z } from "zod/v4";
 import type { Category, Place } from "../places";
 import { CHOOSE_MODEL, WRITE_MODEL, aiConfigured, aiSwitchedOff, askJSON } from "../ai.server";
 import { addStay, buildRoutes, pickDiverse, type Route, type RouteContext } from "./routes";
+import { overDailyCap } from "../spend.server";
 import { PLANS_PER_REQUEST, SHORT_WINDOW_MINUTES, MIN_PLANS_SHORT_WINDOW } from "../rules";
 
 // Step 8: about 3 s per AI step was the budget; measured calls need a little more headroom.
@@ -149,7 +150,8 @@ export async function composeDay(
 
   const notices: string[] = [];
   const ai = { choose: "fallback" as "ai" | "fallback", write: "fallback" as "ai" | "fallback" };
-  const useAi = aiConfigured() && !aiSwitchedOff();
+  // Off switch, or today's AI spend at the cap: the plain "quick version" (Step 8).
+  const useAi = aiConfigured() && !aiSwitchedOff() && !(await overDailyCap());
 
   // D3: the AI picks among valid routes; anything invalid falls back to the best-ranked routes.
   let picked = options.slice(0, want).map((route) => ({ route, theme: "", why: "" }));

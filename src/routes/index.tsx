@@ -214,7 +214,8 @@ function Home() {
         day,
         time,
         end,
-        ...profileSearch(profile),
+        // Read at tap time too, so a tap before the profile loads still respects it.
+        ...profileSearch(profile ?? loadProfile()),
         ...cityParam,
       },
     });
@@ -268,7 +269,8 @@ function Home() {
                   day: "day" in x ? (leb ? x.day! : DAYS[1]) : day,
                   time: "time" in x ? x.time! : time,
                   end,
-                  ...profileSearch(profile),
+                  // Read at tap time too, so a tap before the profile loads still respects it.
+                  ...profileSearch(profile ?? loadProfile()),
                   ...cityParam,
                 },
               })
