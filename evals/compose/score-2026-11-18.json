@@ -1,0 +1,64 @@
+{
+  "planner": "new day-out planner: code routes, Sonnet 5.5 choose (low), Haiku 5.5 write (low)",
+  "date": "2026-11-18",
+  "tests": 19,
+  "checks": 445,
+  "checksPassed": 444,
+  "testsFullyPassed": 18,
+  "instantFails": 0,
+  "quality": "not graded yet (needs the judge)",
+  "latencySeconds": {
+    "typical": 8.8,
+    "slowest": 12.2
+  },
+  "byCheck": {
+    "A10": {
+      "passed": 19,
+      "total": 19
+    },
+    "A1": {
+      "passed": 57,
+      "total": 57
+    },
+    "A2": {
+      "passed": 57,
+      "total": 57
+    },
+    "A3": {
+      "passed": 57,
+      "total": 57
+    },
+    "A4": {
+      "passed": 57,
+      "total": 57
+    },
+    "A5": {
+      "passed": 57,
+      "total": 57
+    },
+    "A6": {
+      "passed": 57,
+      "total": 57
+    },
+    "A9": {
+      "passed": 57,
+      "total": 57
+    },
+    "A8": {
+      "passed": 3,
+      "total": 3
+    },
+    "A7": {
+      "passed": 6,
+      "total": 6
+    },
+    "A11": {
+      "passed": 14,
+      "total": 15
+    },
+    "A12": {
+      "passed": 3,
+      "total": 3
+    }
+  }
+}

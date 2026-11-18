@@ -60,6 +60,33 @@ console.log(
   `Speed: typical ${sec(ms[Math.floor(ms.length / 2)]!)} s, slowest ${sec(ms.at(-1)!)} s`,
 );
 
+// --save <file> --planner "<label>": keep this score next to the baseline, e.g. score-2026-11-18.json
+const saveAt = process.argv.indexOf("--save");
+if (saveAt > 0) {
+  const label = process.argv[process.argv.indexOf("--planner") + 1] ?? "current planner";
+  const file = process.argv[saveAt + 1]!;
+  writeFileSync(
+    new URL(file, here),
+    JSON.stringify(
+      {
+        planner: label,
+        date: new Date().toISOString().slice(0, 10),
+        tests: s.tests,
+        checks: s.checks,
+        checksPassed: s.checksPassed,
+        testsFullyPassed: s.testsAllPassed,
+        instantFails: s.instantFails,
+        quality: "not graded yet (needs the judge)",
+        latencySeconds: { typical: sec(ms[Math.floor(ms.length / 2)]!), slowest: sec(ms.at(-1)!) },
+        byCheck: s.byCheck,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  console.log(`Saved evals/compose/${file}`);
+}
+
 if (process.argv.includes("--write-baseline")) {
   const out = {
     planner: "live app today (one Opus 5.5 call, medium effort)",

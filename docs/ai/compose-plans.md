@@ -452,6 +452,23 @@ First live exam, 3 tests:
 
 Test 15 showed requested categories were only a bonus and the variety step could drop the only sea view; fixed (routes covering everything asked for come first). Still open: speed is about 9 s against the 5 s target; the database is deferred (decided 2026-11-18): no logs, saved feedback or daily cap until it is switched on; the code is ready and turns on with two Vercel secrets.
 
+### Full exam, new version (2026-11-18)
+
+All 19 ready tests on the live app (`evals/compose/score-2026-11-18.json`; the baseline stays in `baseline.json`).
+
+| Measure            | Baseline (old planner, 2026-11-17) | New planner (2026-11-18) | Target                           |
+| ------------------ | ---------------------------------- | ------------------------ | -------------------------------- |
+| Instant fails      | 0                                  | 0                        | 0                                |
+| Yes/No checks      | 418 of 429 (97.4%)                 | 444 of 445 (99.8%)       | 100%                             |
+| Tests fully passed | 9 of 19                            | 18 of 19                 | 19 of 19                         |
+| Typical speed      | 18.1 s                             | 8.8 s                    | under 5 s (9 s accepted for now) |
+| Slowest            | 28.7 s                             | 12.2 s                   | under 8 s                        |
+| Quality, 1 to 5    | not graded                         | not graded               | average 4                        |
+
+By check, baseline to new: drives within the limit 51/55 to 57/57 · meal times 53/55 to 57/57 · sunset when asked 3/4 to 6/6 · everything asked for 12/15 to 14/15 · plan count 18/19 to 19/19. The one miss: test 14 ("full day with a view"), one plan without a view stop.
+
+Changes made during the live runs: Write moved from medium to low effort with a 9 s limit (medium timed out, so every plan fell back to plain text); requested categories come before variety; every stop within the max drive of the chosen place, with a "How far" slider; a town picked in Lebanon (El Mina) or the current location is now used. Not yet graded: quality (needs the judge).
+
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
