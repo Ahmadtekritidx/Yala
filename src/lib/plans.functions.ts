@@ -99,6 +99,10 @@ const Input = z.object({
     .default([]),
   // Anonymous id of this browser (random, made on the device), to join events from the same person.
   device: z.string().uuid().optional(),
+  // Set by a "Not quite right?" button: the run being adjusted. The first adjust of a run is free.
+  adjustOf: z.string().uuid().optional(),
+  // How many times this search was shuffled: a repeat of the same request and attempt counts once.
+  attempt: z.number().int().min(0).max(1000).default(0),
 });
 
 const AiOut = z.object({
@@ -169,7 +173,31 @@ export const generatePlans = createServerFn({ method: "POST" })
     return { ...r, runId };
   });
 
+// Free version (docs/ai/compose-plans.md, Step 8): plans per browser, counted by its anonymous id.
+// Requests without one (scripts, the exam runner) only meet the per-IP limit below.
+const FREE_PER_DAY = Number(process.env["YALLA_FREE_PER_DAY"] ?? 2);
+const FREE_PER_MONTH = Number(process.env["YALLA_FREE_PER_MONTH"] ?? 5);
+const DAY_MS = 24 * 3600e3;
+
+async function freeLimit(data: z.infer<typeof Input>): Promise<string> {
+  if (!data.device || FREE_PER_DAY <= 0) return "";
+  if (
+    data.adjustOf &&
+    !(await rateLimit("adjust", 1, 30 * DAY_MS, `${data.device}:${data.adjustOf}`))
+  )
+    return "";
+  const day = await rateLimit("free-day", FREE_PER_DAY, DAY_MS, data.device);
+  if (day)
+    return `You've used your ${FREE_PER_DAY} free plans for today. Your recent plans are on the home page; new ones tomorrow (in about ${Math.ceil(day / 60)}h). Unlimited plans are coming soon.`;
+  const month = await rateLimit("free-month", FREE_PER_MONTH, 30 * DAY_MS, data.device);
+  if (month)
+    return `You've used your ${FREE_PER_MONTH} free plans this month. Your recent plans are on the home page; new ones in ${Math.ceil(month / 1440)} days. Unlimited plans are coming soon.`;
+  return "";
+}
+
 async function buildPlans(data: z.infer<typeof Input>, runId: string) {
+  const free = await freeLimit(data);
+  if (free) return { error: free, limit: true };
   const mins = await rateLimit("plans", LIMIT, WINDOW);
   if (mins) return { error: `Easy habibi, that's a lot of plans. Try again in ${mins} min.` };
   // Trip mode: one plan per day from the start date, each with its own weekday (opening hours differ).

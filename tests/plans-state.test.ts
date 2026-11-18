@@ -78,10 +78,12 @@ ok(
   run([{ type: "undoExpired" }], removed).status === "ready" &&
     (run([{ type: "undoExpired" }], removed) as { undo: unknown }).undo === null,
 );
-const swappedAfterRemove = run([{ type: "change", plans: A3 }], removed);
+const swappedAfterRemove = run([{ type: "change", plans: A3, label: "Stop swapped" }], removed);
 ok(
-  "a swap after a remove drops the undo",
-  swappedAfterRemove.status === "ready" && swappedAfterRemove.undo === null,
+  "a swap after a remove can be undone, back to just before the swap",
+  swappedAfterRemove.status === "ready" &&
+    swappedAfterRemove.undo === (removed as { plans: unknown }).plans &&
+    swappedAfterRemove.undoLabel === "Stop swapped",
 );
 ok(
   "undo cannot cross a shuffle",

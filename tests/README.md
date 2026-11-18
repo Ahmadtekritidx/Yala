@@ -4,7 +4,7 @@ Browser test of every flow (home, profile, plans, edit, shuffle, share, status) 
 
 ```bash
 # 1. start the app with the fake Google + AI
-ANTHROPIC_API_KEY=sk-ant-test GOOGLE_PLACES_API_KEY=g-test NODE_OPTIONS="--import ./tests/mock.mjs" npx vite dev --port 5173 --host 127.0.0.1
+YALLA_FREE_PER_DAY=0 ANTHROPIC_API_KEY=sk-ant-test GOOGLE_PLACES_API_KEY=g-test NODE_OPTIONS="--import ./tests/mock.mjs" npx vite dev --port 5173 --host 127.0.0.1
 # 2. in another terminal (needs playwright installed)
 node tests/e2e.mjs
 # any city outside Lebanon (Riyadh, Dubai, use my location, profile home city)

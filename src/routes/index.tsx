@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { encodePlan } from "@/lib/share";
+import { clearAsk, dueAsk, type PendingAsk } from "@/lib/did-you-go";
+import { track } from "@/lib/track";
 import { toMin } from "@/lib/places";
 import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/profile";
 import { SavedReels } from "@/components/SavedReels";
@@ -155,6 +157,7 @@ function Home() {
     }
   };
   const [recent, setRecent] = useState<Recent[]>([]);
+  const [ask, setAsk] = useState<PendingAsk | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [city, setCity] = useState<City>(LEBANON);
   const leb = isLebanon(city);
@@ -164,6 +167,7 @@ function Home() {
   useEffect(() => {
     try {
       setRecent(JSON.parse(localStorage.getItem("yalla:recent") || "[]"));
+      setAsk(dueAsk());
       const pr = loadProfile();
       setProfile(pr);
       const c = loadCity();
@@ -403,6 +407,35 @@ function Home() {
                 <p className="font-display text-lg font-bold">{l.title}</p>
                 <p className="text-sm text-muted-foreground">{l.vibe}</p>
                 <p className="mt-2 text-xs font-bold text-primary">Open plan →</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {ask && (
+        <section className="mt-12 rounded-2xl pop bg-card p-5" aria-label="Did you go?">
+          <p className="font-bold">
+            {ask.day}'s plan, "{ask.title}": did you go?
+          </p>
+          <div className="mt-3 flex gap-2">
+            {(
+              [
+                ["yes", "👍 Yes, loved it"],
+                ["meh", "Went, it was ok"],
+                ["no", "👎 Didn't go"],
+              ] as const
+            ).map(([v, t]) => (
+              <button
+                key={v}
+                onClick={() => {
+                  track("did_you_go", { answer: v, title: ask.title }, ask.runId);
+                  clearAsk();
+                  setAsk(null);
+                }}
+                className="min-h-11 rounded-full border border-border px-3 text-sm font-medium hover:border-primary"
+              >
+                {t}
               </button>
             ))}
           </div>

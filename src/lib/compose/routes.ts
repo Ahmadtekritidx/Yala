@@ -7,6 +7,7 @@
 import { driveMins, type Category, type Place } from "../places.ts";
 import { arrivalAfter, fits, type Rules } from "../alternatives.ts";
 import {
+  MEAL_GAP_MINUTES,
   PACE_STOPS,
   ROAD_TRIP_MAX_DRIVE_SHARE,
   SUNSET_ARRIVE_BY,
@@ -90,6 +91,11 @@ export function buildRoutes(pool: Place[], ctx: RouteContext): Route[] {
         const ready = last ? arrivalAfter(last.time, last.place, p) : start;
         const at = arrivalFor(p, ready, ctx);
         if (at === null) continue;
+        if (
+          isMeal(p.cat) &&
+          r.stops.some((st) => isMeal(st.place.cat) && at - st.time < MEAL_GAP_MINUTES)
+        )
+          continue;
         const stops = [...r.stops, { place: p, time: at }];
         const drive = r.drive + leg;
         const wait = r.wait + (at - ready);

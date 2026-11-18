@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { mealName } from "@/lib/rules";
 import { useEffect, useState } from "react";
 import { decodePlan, nextDate } from "@/lib/share";
 import { track } from "@/lib/track";
@@ -204,7 +205,9 @@ function SharedPlan() {
                 </p>
               )}
               <p className="font-display text-xl font-bold text-primary">{fmt(s.time)}</p>
-              <p className="text-xs font-bold uppercase tracking-wider text-secondary">{pl.cat}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-secondary">
+                {mealName(pl.cat, s.time)}
+              </p>
               <p className="text-lg font-bold">{pl.name}</p>
               <p className="text-muted-foreground">{s.reason}</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -308,6 +311,9 @@ function SharedPlan() {
       <Link to="/" className="mt-6 block text-center font-bold text-primary">
         Make my own →
       </Link>
+      <p className="mt-6 text-center text-xs text-muted-foreground">
+        Planned by Yalla AI · Places and hours from Google Maps
+      </p>
     </main>
   );
 }

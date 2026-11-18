@@ -16,6 +16,11 @@ export const EVENT_NAMES = [
   "plan_whatsapp",
   "plan_calendar",
   "plan_directions",
+  "change_undone", // Undo after a removed, swapped or added stop
+  "quick_adjust", // "Not quite right?" buttons: more chill, cheaper, more food, closer
+  "plan_feedback", // thumbs up or down on a plan
+  "did_you_go", // the next-visit question about a picked plan
+  "limit_reached", // the free plan limit stopped a request
 ] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 type Props = Record<string, string | number | boolean | null>;

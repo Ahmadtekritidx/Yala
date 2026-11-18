@@ -11,9 +11,10 @@
 // Inside ready, `editing` says what the user is doing to the plans, one thing at a time:
 //   none ─▶ swap (sheet open on one stop) | add (category chips open on one plan)
 //   add ─▶ addFailed (no spot of that type nearby; the note shows on that plan only)
-// and `undo` holds the plans from before the last removed stop while the "Undo" toast shows.
-// Any other change to the plans, or a new request, drops the undo, so it can never revert
-// a later swap or bring back plans from before a shuffle.
+// and `undo` holds the plans from before the last change (a removed, swapped or added stop) while
+// the "Undo" toast shows (docs/ai/compose-plans.md, Step 7: undo for every change). Each change
+// replaces the undo with its own, so Undo always reverts the latest change only, and a new request
+// drops it, so it can never bring back plans from before a shuffle.
 import type { Category } from "./places";
 import type { Plan } from "./plans.functions";
 
@@ -26,15 +27,23 @@ export type Editing =
 export type PlansState =
   | { status: "loading"; run: number }
   | { status: "failed"; run: number; error: string }
-  | { status: "ready"; run: number; plans: Plan[]; editing: Editing; undo: Plan[] | null };
+  | {
+      status: "ready";
+      run: number;
+      plans: Plan[];
+      editing: Editing;
+      undo: Plan[] | null;
+      /** What the toast says the last change was, e.g. "Stop swapped". */
+      undoLabel: string;
+    };
 
 export type PlansEvent =
   | { type: "load"; run: number }
   | { type: "loaded"; run: number; plans: Plan[] }
   | { type: "failed"; run: number; error: string }
   | { type: "edit"; editing: Editing }
-  // New plans after a swap or an added stop. Closes whatever was open.
-  | { type: "change"; plans: Plan[] }
+  // New plans after a swap or an added stop. Closes whatever was open. Can be undone.
+  | { type: "change"; plans: Plan[]; label?: string }
   // New plans after a removed stop. Can be undone until the toast expires. Leaves open chips open.
   | { type: "remove"; plans: Plan[] }
   | { type: "undo" }
@@ -55,6 +64,7 @@ export function plansReducer(state: PlansState, event: PlansEvent): PlansState {
         plans: event.plans,
         editing: NOT_EDITING,
         undo: null,
+        undoLabel: "",
       };
     case "failed":
       if (event.run !== state.run) return state;
@@ -66,9 +76,15 @@ export function plansReducer(state: PlansState, event: PlansEvent): PlansState {
     case "edit":
       return { ...state, editing: event.editing };
     case "change":
-      return { ...state, plans: event.plans, editing: NOT_EDITING, undo: null };
+      return {
+        ...state,
+        plans: event.plans,
+        editing: NOT_EDITING,
+        undo: state.plans,
+        undoLabel: event.label ?? "Plan changed",
+      };
     case "remove":
-      return { ...state, plans: event.plans, undo: state.plans };
+      return { ...state, plans: event.plans, undo: state.plans, undoLabel: "Stop removed" };
     case "undo":
       return state.undo ? { ...state, plans: state.undo, undo: null } : state;
     case "undoExpired":

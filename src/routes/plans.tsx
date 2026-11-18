@@ -16,11 +16,14 @@ import {
   type Place,
 } from "@/lib/places";
 import { hoursOn, openAt } from "@/lib/hours";
-import { alternatives, arrivalAfter, dietOf, type Rules } from "@/lib/alternatives";
+import { mealName } from "@/lib/rules";
+import { alternatives, arrivalAfter, dietOf, fits, type Rules } from "@/lib/alternatives";
 import { VibeStrip } from "@/components/VibeStrip";
 import { decodeBase, decodeCity, isLebanon } from "@/lib/city";
 import { loadSaved, type Saved } from "@/lib/saved";
 import { deviceId, track } from "@/lib/track";
+import { isoDay, rememberPick } from "@/lib/did-you-go";
+import { nextDate } from "@/lib/share";
 
 const Search = z.object({
   q: z.coerce.string().optional().default(""),
@@ -41,6 +44,8 @@ const Search = z.object({
   days: z.coerce.string().optional().default("1"),
   base: z.string().optional().default(""),
   start: z.string().optional().default(""),
+  // The run a "Not quite right?" button adjusted (its first adjust is free).
+  adj: z.string().optional().default(""),
 });
 
 // Keep the last result per request in this tab, so "Edit plan" and back navigation
@@ -95,12 +100,17 @@ function PlansPage() {
   const error = state.status === "failed" ? state.error : "";
   const editing = state.status === "ready" ? state.editing : NOT_EDITING;
   const undo = state.status === "ready" ? state.undo : null;
+  const undoLabel = state.status === "ready" ? state.undoLabel : "";
+  // Honest notes from the planner (Step 7), e.g. "Quick version" or "About 2h15 of driving".
+  const [notices, setNotices] = useState<string[]>([]);
   const [n, setN] = useState(0);
   const lastRun = useRef(0);
   // The server's id for the plans on screen, so taps on them join the request in the logs.
   const runId = useRef<string | undefined>(undefined);
   const [msg, setMsg] = useState(0);
   const [mySaves, setMySaves] = useState<Saved[]>([]);
+  // Thumbs up or down per plan (Step 7 feedback), shown on the plan once given.
+  const [thumbs, setThumbs] = useState<Record<number, "up" | "down">>({});
 
   const tripDays = Number(s.days) > 1 ? Number(s.days) : 0;
   const cityName = decodeCity(s.city)?.name;
@@ -122,6 +132,8 @@ function PlansPage() {
   useEffect(() => {
     const run = ++lastRun.current;
     dispatch({ type: "load", run });
+    setNotices([]);
+    setThumbs({});
     setMsg(0);
     const saves = loadSaved();
     setMySaves(saves);
@@ -158,6 +170,8 @@ function PlansPage() {
         saved: savedInput,
         days: Math.min(7, Math.max(1, Number(s.days) || 1)),
         device: deviceId(),
+        attempt: n,
+        ...(/^[0-9a-f-]{36}$/.test(s.adj) ? { adjustOf: s.adj } : {}),
         ...(decodeBase(s.base) ? { base: decodeBase(s.base)! } : {}),
         ...(/^\d{4}-\d{2}-\d{2}$/.test(s.start) ? { start: s.start } : {}),
         ...(() => {
@@ -168,13 +182,18 @@ function PlansPage() {
     })
       .then((r) => {
         if ("error" in r && r.error) {
-          track("plans_error", { error: r.error }, r.runId);
+          track(
+            "limit" in r && r.limit ? "limit_reached" : "plans_error",
+            { error: r.error },
+            r.runId,
+          );
           return dispatch({ type: "failed", run, error: r.error });
         }
         // An answer for a request the user already moved on from: drop it, places included.
         if (run !== lastRun.current) return;
         if (r.places) registerPlaces(r.places);
         runId.current = r.runId;
+        setNotices("notices" in r && r.notices ? r.notices : []);
         dispatch({ type: "loaded", run, plans: r.plans! });
         track("plans_shown", { count: r.plans!.length, cached: false }, r.runId);
       })
@@ -187,7 +206,7 @@ function PlansPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, n]);
 
-  // The "Stop removed · Undo" toast lasts 5 seconds after the latest removal.
+  // The "Stop removed · Undo" toast lasts 5 seconds after the latest change.
   useEffect(() => {
     if (!undo) return;
     const t = setTimeout(() => dispatch({ type: "undoExpired" }), 5000);
@@ -211,9 +230,53 @@ function PlansPage() {
     diet: dietOf(s.prefs ? s.prefs.split(",") : []),
   });
 
-  // The plans with plan p's stops replaced (and re-timed from its first stop).
-  const withStops = (ps: Plan[], p: number, stops: Stop[]) =>
-    ps.map((x, k) => (k === p ? { ...x, stops: retime(stops, ps[p]!.stops[0]!.time) } : x));
+  // The plans with plan p's stops replaced, re-timed from its first stop. A change can push later
+  // stops to a time they are closed: those are swapped for the nearest place of the same kind that
+  // is open then and fits the plan, or left flagged when there is none (Step 7: re-check after a swap).
+  const withStops = (ps: Plan[], p: number, stops: Stop[], changedAt = 0) =>
+    ps.map((x, k) => {
+      if (k !== p) return x;
+      let out = retime(stops, ps[p]!.stops[0]!.time);
+      const rules = rulesFor(x);
+      for (let i = changedAt + 1; i < out.length; i++) {
+        const st = out[i]!;
+        const pl = byId(st.placeId)!;
+        if (pl.cat === "Stay" || fits(pl, st.time, rules)) continue;
+        const prev = byId(out[i - 1]!.placeId)!;
+        const alt = alternatives(allPlaces(), {
+          cat: pl.cat,
+          near: prev,
+          exclude: new Set(ps.flatMap((y) => y.stops.map((z) => z.placeId))),
+          maxDrive: 40,
+          arriveAt: (y) => arrivalAfter(out[i - 1]!.time, prev, y),
+          rules,
+        })[0];
+        if (!alt) continue;
+        out = retime(
+          out.map((z, j) => (j === i ? { ...z, placeId: alt.id, reason: alt.reason } : z)),
+          out[0]!.time,
+        );
+      }
+      return { ...x, stops: out };
+    });
+
+  // "Not quite right?" (Step 7): one tap asks again with one thing changed.
+  const adjust = (kind: "chill" | "cheaper" | "food" | "closer") => {
+    track("quick_adjust", { kind }, runId.current);
+    const what = new Set(s.what ? s.what.split(",") : []);
+    if (kind === "food") ["Lunch", "Dessert"].forEach((w) => what.add(w));
+    navigate({
+      to: "/plans",
+      search: {
+        ...s,
+        ...(kind === "chill" ? { pace: "Chill" as const, q: `${s.q} chill`.trim() } : {}),
+        ...(kind === "cheaper" ? { budget: String(Math.max(1, (Number(s.budget) || 3) - 1)) } : {}),
+        ...(kind === "food" ? { what: [...what].join(",") } : {}),
+        ...(kind === "closer" ? { drive: String(Math.max(10, (Number(s.drive) || 30) - 15)) } : {}),
+        adj: runId.current ?? "",
+      },
+    });
+  };
 
   const remove = (p: number, i: number) => {
     if (!plans) return;
@@ -248,10 +311,13 @@ function PlansPage() {
     track("stop_added", { plan: p, cat, place: pick.id }, runId.current);
     dispatch({
       type: "change",
-      plans: withStops(plans, p, [
-        ...plan.stops,
-        { placeId: pick.id, reason: pick.reason, time: 0 },
-      ]),
+      label: "Stop added",
+      plans: withStops(
+        plans,
+        p,
+        [...plan.stops, { placeId: pick.id, reason: pick.reason, time: 0 }],
+        plan.stops.length,
+      ),
     });
   };
 
@@ -280,15 +346,24 @@ function PlansPage() {
         <div className="mt-16 text-center">
           <p className="font-display text-2xl font-bold">Ya jama3a...</p>
           <p className="mt-2 text-muted-foreground">{error}</p>
-          <button
-            onClick={() => {
-              track("plans_shuffled", { after: error ? "error" : "plans" }, runId.current);
-              setN((x) => x + 1);
-            }}
-            className="mt-6 min-h-12 rounded-2xl pop press bg-primary px-6 font-bold text-primary-foreground"
-          >
-            Try again
-          </button>
+          {/free plans/.test(error) ? (
+            <Link
+              to="/"
+              className="mt-6 inline-grid min-h-12 place-items-center rounded-2xl pop press bg-primary px-6 font-bold text-primary-foreground"
+            >
+              Back home
+            </Link>
+          ) : (
+            <button
+              onClick={() => {
+                track("plans_shuffled", { after: error ? "error" : "plans" }, runId.current);
+                setN((x) => x + 1);
+              }}
+              className="mt-6 min-h-12 rounded-2xl pop press bg-primary px-6 font-bold text-primary-foreground"
+            >
+              Try again
+            </button>
+          )}
         </div>
       )}
 
@@ -305,6 +380,16 @@ function PlansPage() {
                 ))}
               </div>
             </div>
+          ))}
+        </div>
+      )}
+
+      {plans && notices.length > 0 && (
+        <div className="mt-6 space-y-2" role="status">
+          {notices.map((t) => (
+            <p key={t} className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">
+              {t}
+            </p>
           ))}
         </div>
       )}
@@ -336,6 +421,11 @@ function PlansPage() {
                 )}
                 <h2 className="font-display text-2xl font-bold leading-tight">{plan.title}</h2>
                 <p className="mt-1 text-muted-foreground">{plan.vibe}</p>
+                {plan.why && (
+                  <p className="mt-2 text-sm">
+                    <span className="font-bold">Why this plan:</span> {plan.why}
+                  </p>
+                )}
                 {plan.base && first && (
                   <p className="mt-4 text-xs font-medium text-muted-foreground">
                     🏨 From {plan.base.name} · {driveMins(plan.base, byId(first.placeId)!)} min to
@@ -359,7 +449,7 @@ function PlansPage() {
                           </p>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold uppercase tracking-wider text-secondary">
-                              {pl.cat}
+                              {mealName(pl.cat, st.time)}
                             </p>
                             <p className="font-bold">
                               {pl.name}
@@ -452,6 +542,27 @@ function PlansPage() {
                     then and fits your plan.
                   </p>
                 )}
+                <div className="mt-4 flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Good plan?</span>
+                  {(["up", "down"] as const).map((v) => (
+                    <button
+                      key={v}
+                      aria-label={v === "up" ? "Good plan" : "Not for us"}
+                      aria-pressed={thumbs[p] === v}
+                      onClick={() => {
+                        setThumbs((t) => ({ ...t, [p]: v }));
+                        track(
+                          "plan_feedback",
+                          { plan: p, value: v, title: plan.title },
+                          runId.current,
+                        );
+                      }}
+                      className={`grid h-11 w-11 place-items-center rounded-full border ${thumbs[p] === v ? "border-primary bg-primary/10" : "border-border"}`}
+                    >
+                      {v === "up" ? "👍" : "👎"}
+                    </button>
+                  ))}
+                </div>
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
                   <p className="text-sm text-muted-foreground">
                     {Math.round(total / 30) / 2}h{lastPlace?.cat === "Stay" ? " + overnight" : ""} ·
@@ -469,6 +580,14 @@ function PlansPage() {
                       const code = tripDays
                         ? encodeTrip(plans.map((x) => ({ ...x, day: x.day ?? s.day })))
                         : encodePlan({ ...plan, day: s.day });
+                      if (!tripDays)
+                        rememberPick({
+                          code,
+                          title: plan.title,
+                          day: s.day,
+                          date: isoDay(nextDate(s.day)),
+                          ...(runId.current ? { runId: runId.current } : {}),
+                        });
                       saveRecent(
                         code,
                         tripDays
@@ -485,6 +604,36 @@ function PlansPage() {
             );
           })}
         </div>
+      )}
+
+      {plans && !tripDays && (
+        <div className="mt-8 rounded-2xl border border-border p-4">
+          <p className="text-sm font-bold">Not quite right?</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(
+              [
+                ["chill", "More chill"],
+                ["cheaper", "Cheaper"],
+                ["food", "More food"],
+                ["closer", "Closer"],
+              ] as const
+            ).map(([k, t]) => (
+              <button
+                key={k}
+                onClick={() => adjust(k)}
+                className="min-h-11 rounded-full border border-border px-4 text-sm font-medium hover:border-primary"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {plans && (
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Planned by Yalla AI · Places and hours from Google Maps
+        </p>
       )}
 
       {editing.kind === "swap" && plans && (
@@ -507,18 +656,22 @@ function PlansPage() {
             const stops = plans[editing.plan]!.stops.map((st, k) =>
               k === editing.stop ? { ...st, placeId: id, reason: byId(id)!.reason } : st,
             );
-            dispatch({ type: "change", plans: withStops(plans, editing.plan, stops) });
+            dispatch({
+              type: "change",
+              label: "Stop swapped",
+              plans: withStops(plans, editing.plan, stops, editing.stop),
+            });
           }}
         />
       )}
 
       {undo && (
         <div className="fixed inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-4 rounded-full bg-foreground px-5 py-3 text-sm text-background shadow-lg">
-          Stop removed
+          {undoLabel}
           <button
             className="font-bold text-primary"
             onClick={() => {
-              track("stop_remove_undone", {}, runId.current);
+              track("change_undone", { what: undoLabel }, runId.current);
               dispatch({ type: "undo" });
             }}
           >

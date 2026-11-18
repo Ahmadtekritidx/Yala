@@ -12,9 +12,21 @@ export const MEAL_WINDOWS: Partial<Record<Category, [number, number]>> = {
   Dinner: [19 * 60 + 30, 22 * 60 + 30],
 };
 export const isMeal = (c: Category) => c in MEAL_WINDOWS;
+// Two meals in one plan must start at least this far apart (no brunch at 12 then lunch at 15:15).
+export const MEAL_GAP_MINUTES = 240;
 // True when a meal stop's arrival time falls in some meal's window.
 export const mealTimeOk = (t: number) =>
   Object.values(MEAL_WINDOWS).some(([a, b]) => t >= a && t <= b);
+
+// What to call a meal stop on screen: its time slot, not the search it came from
+// (a "Dinner" restaurant at 13:00 is lunch).
+export function mealName(cat: Category, t: number): string {
+  if (!isMeal(cat)) return cat;
+  if (t < 10 * 60 + 30) return "Breakfast";
+  if (t < 12 * 60 + 30) return "Brunch";
+  if (t < 17 * 60) return "Lunch";
+  return "Dinner";
+}
 
 // Stops per plan, not counting an overnight Stay.
 export const PACE_STOPS: Record<"Chill" | "Packed", [number, number]> = {

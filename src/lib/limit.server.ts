@@ -21,23 +21,29 @@ const buckets = new Map<string, Map<string, number[]>>();
 // With the shared store configured the count lives in the database, so it holds across server instances
 // and restarts (a fixed window per visitor, keyed by a hash of the IP, never the raw IP).
 // Without it, or if the database does not answer in time, the per-instance memory limit below is used.
-export async function rateLimit(bucket: string, limit: number, windowMs: number): Promise<number> {
+// `who` counts someone other than this IP, e.g. the browser's anonymous device id.
+export async function rateLimit(
+  bucket: string,
+  limit: number,
+  windowMs: number,
+  who?: string,
+): Promise<number> {
+  const id = who ?? clientIp();
   if (storeConfigured()) {
     const shared = await rpc<number>("hit_rate_limit", {
-      p_key: await sha256(`${bucket}:${clientIp()}`),
+      p_key: await sha256(`${bucket}:${id}`),
       p_limit: limit,
       p_window_seconds: Math.round(windowMs / 1000),
     });
     if (typeof shared === "number") return shared;
   }
-  return memoryRateLimit(bucket, limit, windowMs);
+  return memoryRateLimit(bucket, limit, windowMs, id);
 }
 
-function memoryRateLimit(bucket: string, limit: number, windowMs: number): number {
+function memoryRateLimit(bucket: string, limit: number, windowMs: number, ip: string): number {
   let hits = buckets.get(bucket);
   if (!hits) buckets.set(bucket, (hits = new Map()));
-  const ip = clientIp(),
-    now = Date.now();
+  const now = Date.now();
   const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
   if (recent.length >= limit)
     return Math.max(1, Math.ceil((windowMs - (now - recent[0]!)) / 60000));
