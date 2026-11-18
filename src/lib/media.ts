@@ -72,16 +72,6 @@ export function saveClip(placeId: string, url: string) {
     /* storage blocked: clip still shows this session */
   }
 }
-export function removeClip(placeId: string, url: string) {
-  try {
-    const s = read();
-    s[placeId] = (s[placeId] ?? []).filter((x) => x !== url);
-    localStorage.setItem(KEY, JSON.stringify(s));
-  } catch {
-    /* ignore */
-  }
-}
-
 export function clipsFor(placeId: string, extra: string[] = []): Clip[] {
   const seen = new Set<string>();
   return [...extra, ...(CURATED[placeId] ?? [])]

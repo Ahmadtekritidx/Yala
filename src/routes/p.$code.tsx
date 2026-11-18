@@ -248,8 +248,8 @@ function SharedPlan() {
                 >
                   Reviews
                 </a>
+                <VibeStrip place={pl} />
               </div>
-              <VibeStrip place={pl} />
             </li>
           );
         })}

@@ -21,13 +21,6 @@ async function expand(url: string) {
   }
 }
 
-// Expands short share links (vm.tiktok.com) to the full URL.
-export const expandLink = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ url: z.string().url() }).parse(d))
-  .handler(async ({ data }) => ({
-    url: (await rateLimit("expand", 60, 3600e3)) ? data.url : await expand(data.url),
-  }));
-
 // Public caption text, no API keys: TikTok and YouTube oEmbed, Instagram page meta tags.
 async function caption(url: string): Promise<string> {
   const host = new URL(url).hostname;

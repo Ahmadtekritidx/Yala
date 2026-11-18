@@ -481,7 +481,9 @@ function PlansPage() {
                                 </p>
                               );
                             })()}
-                            <VibeStrip place={pl} />
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <VibeStrip place={pl} />
+                            </div>
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <button
