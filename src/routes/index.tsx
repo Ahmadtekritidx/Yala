@@ -6,11 +6,7 @@ import { track } from "@/lib/track";
 import { toMin } from "@/lib/places";
 import { loadProfile, profileSearch, profileSummary, type Profile } from "@/lib/profile";
 import { CityPicker } from "@/components/CityPicker";
-import { StayPicker } from "@/components/StayPicker";
 import {
-  decodeBase,
-  encodeBase,
-  type Base,
   encodeCity,
   isLebanon,
   LEBANON,
@@ -139,23 +135,6 @@ function Home() {
   const [day, setDay] = useState("Saturday");
   const [time, setTime] = useState("12:00");
   const [end, setEnd] = useState("18:00");
-  // Weekend = one day out; Trip = several days somewhere, one plan per day.
-  const [mode, setMode] = useState<"weekend" | "trip">("weekend");
-  const [days, setDays] = useState(3);
-  const [base, setBase] = useState<Base | null>(null);
-  const [start, setStart] = useState(() =>
-    new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10),
-  );
-  const setTrip = (on: boolean) => {
-    setMode(on ? "trip" : "weekend");
-    if (on) {
-      setTime("09:00");
-      setEnd("21:00");
-    } else {
-      setTime("12:00");
-      setEnd("18:00");
-    }
-  };
   const [recent, setRecent] = useState<Recent[]>([]);
   const [ask, setAsk] = useState<PendingAsk | null>(null);
   // Max drive from the chosen place, in minutes: nothing is suggested further away (the radius).
@@ -175,12 +154,6 @@ function Home() {
       if (pr?.maxDrive) setDrive(pr.maxDrive);
       const c = loadCity();
       setCity(c);
-      // The stay is remembered for the city it was picked in.
-      const saved = JSON.parse(localStorage.getItem("yalla:stay") || "null") as {
-        city: string;
-        base: string;
-      } | null;
-      if (saved && saved.city === encodeCity(c)) setBase(decodeBase(saved.base));
       if (!isLebanon(c)) {
         setDay(weekendDays(c)[0]);
         return;
@@ -195,24 +168,9 @@ function Home() {
   const toggle = (list: string[], set: (v: string[]) => void, v: string) =>
     set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
-  const changeBase = (b: Base | null) => {
-    setBase(b);
-    try {
-      if (b)
-        localStorage.setItem(
-          "yalla:stay",
-          JSON.stringify({ city: encodeCity(city), base: encodeBase(b) }),
-        );
-      else localStorage.removeItem("yalla:stay");
-    } catch {
-      /* storage blocked: keep it for this visit only */
-    }
-  };
-
   const changeCity = (c: City) => {
     setCity(c);
     saveCity(c);
-    changeBase(null);
     setWhere([]);
     if (!weekendDays(c).includes(day)) setDay(weekendDays(c)[0]);
   };
@@ -220,18 +178,9 @@ function Home() {
     // A city abroad, or a town picked in Lebanon (El Mina, Jounieh) or the current location:
     // the planner keeps every stop within the max drive of it.
     ...(leb && city.name === "Lebanon" ? {} : { city: encodeCity(city) }),
-    ...(mode === "trip" ? { days: String(days), start } : {}),
-    // Where you're staying (hotel, Airbnb or house): plans start near it and the max drive counts from it.
-    ...(base ? { base: encodeBase(base) } : {}),
   };
 
-  const ready =
-    text.trim().length > 0 ||
-    what.length > 0 ||
-    where.length > 0 ||
-    !!base ||
-    !leb ||
-    mode === "trip";
+  const ready = text.trim().length > 0 || what.length > 0 || where.length > 0 || !leb;
 
   const go = () => {
     if (where[0]) localStorage.setItem("yalla:lastArea", where[0]);
@@ -331,59 +280,32 @@ function Home() {
             />
           ))}
       </Row>
-      {mode === "weekend" && (
-        <Row title="How far">
-          <div className="w-full">
-            <label htmlFor="max-drive" className="text-sm font-medium">
-              Up to {drive} min drive from{" "}
-              {base?.name ||
-                where.filter((w) => !/anywhere/i.test(w)).join(" or ") ||
-                (leb && city.name === "Lebanon" ? "the area you pick" : city.name)}
-            </label>
-            <input
-              id="max-drive"
-              type="range"
-              min={10}
-              max={90}
-              step={5}
-              value={drive}
-              onChange={(e) => setDrive(Number(e.target.value))}
-              className="mt-2 w-full accent-[var(--primary)]"
-            />
-            <p className="text-xs text-muted-foreground">
-              Nothing further away is suggested, and drives between stops stay under it too.
-            </p>
-          </div>
-        </Row>
-      )}
-      <Row title="When">
-        <Chip label="This weekend" on={mode === "weekend"} onClick={() => setTrip(false)} />
-        <Chip label="A trip (several days)" on={mode === "trip"} onClick={() => setTrip(true)} />
-      </Row>
-      {mode === "trip" ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="text-sm text-muted-foreground" htmlFor="trip-start">
-            From
+      <Row title="How far">
+        <div className="w-full">
+          <label htmlFor="max-drive" className="text-sm font-medium">
+            Up to {drive} min drive from{" "}
+            {where.filter((w) => !/anywhere/i.test(w)).join(" or ") ||
+              (leb && city.name === "Lebanon" ? "the area you pick" : city.name)}
           </label>
           <input
-            id="trip-start"
-            type="date"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            className="min-h-11 rounded-full pop press bg-card px-4 text-sm"
+            id="max-drive"
+            type="range"
+            min={10}
+            max={90}
+            step={5}
+            value={drive}
+            onChange={(e) => setDrive(Number(e.target.value))}
+            className="mt-2 w-full accent-[var(--primary)]"
           />
-          <span className="text-sm text-muted-foreground">for</span>
-          {[2, 3, 4, 5, 7].map((n) => (
-            <Chip key={n} label={`${n} days`} on={days === n} onClick={() => setDays(n)} />
-          ))}
+          <p className="text-xs text-muted-foreground">
+            Nothing further away is suggested, and drives between stops stay under it too.
+          </p>
         </div>
-      ) : null}
-      <Row title="Where are you staying?">
-        <StayPicker base={base} near={city} onChange={changeBase} />
       </Row>
-      <Row title={mode === "trip" ? "Each day" : "Day"}>
-        {mode === "weekend" &&
-          DAYS.map((d) => <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />)}
+      <Row title="Day">
+        {DAYS.map((d) => (
+          <Chip key={d} label={d} on={day === d} onClick={() => setDay(d)} />
+        ))}
         <input
           type="time"
           value={time}
@@ -409,9 +331,7 @@ function Home() {
         placeholder={
           leb
             ? "Or type it: Italian lunch in Batroun then coffee"
-            : mode === "trip"
-              ? "Or type it: food markets, museums, no early mornings"
-              : "Or type it: brunch, a walk, then sunset"
+            : "Or type it: brunch, a walk, then sunset"
         }
         className="mt-6 min-h-12 w-full rounded-2xl pop bg-card px-4 text-base outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
       />
@@ -422,7 +342,7 @@ function Home() {
         onClick={go}
         className="mt-10 min-h-14 w-full rounded-2xl pop press bg-primary font-display text-lg font-bold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {mode === "trip" ? `Plan my ${days} days` : "Give me 3 plans"}
+        Give me 3 plans
       </button>
 
       {leb && (
