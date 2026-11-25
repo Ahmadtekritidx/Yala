@@ -81,7 +81,7 @@ type Event = {
 - **Use an anonymous id.** A random id kept in the browser is enough. Accounts can link to it later.
 - **Privacy:** update the privacy notice, set a retention period, keep no personal details. Free text from the request is useful for evals; strip anything that looks like a phone number or email.
 
-**Where to store it:** a single Postgres `events` table is enough for a long time. Lovable Cloud (Supabase) is the path of least resistance in this project. A product analytics tool (e.g. PostHog) adds dashboards and funnels, but keep a raw copy you control, because you'll want to train on it.
+**Where to store it:** a single Postgres `events` table is enough for a long time. Supabase is the path of least resistance in this project. A product analytics tool (e.g. PostHog) adds dashboards and funnels, but keep a raw copy you control, because you'll want to train on it.
 
 ---
 

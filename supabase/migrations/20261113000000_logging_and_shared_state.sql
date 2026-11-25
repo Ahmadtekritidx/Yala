@@ -1,5 +1,5 @@
 -- Yalla: AI-call log, product-event log, shared rate limits and shared cache.
--- Run once on the project's Postgres (Lovable Cloud / Supabase: SQL editor, or `supabase db push`).
+-- Run once on the project's Postgres (Supabase: SQL editor, or `supabase db push`).
 -- The app reaches these with the service role key from the server only. Row level security is on
 -- with no policies, so the public (anon) key and signed-in users can read or write nothing here.
 

@@ -21,7 +21,7 @@ The same database also holds the **rate limits** and the **Google search and Ins
 
 **Turn it on (once):**
 
-1. Create a Postgres database on Supabase (or Lovable Cloud, which is Supabase).
+1. Create a Postgres database on Supabase.
 2. Run [`supabase/migrations/20261113000000_logging_and_shared_state.sql`](supabase/migrations/20261113000000_logging_and_shared_state.sql) in its SQL editor. It creates the tables, the rate-limit function and two views, `plan_runs` and `daily_metrics`, and locks them so the public key can't read them. Then run [`supabase/migrations/20261118000000_daily_spend.sql`](supabase/migrations/20261118000000_daily_spend.sql) for the daily spending cap.
 3. Add two **server** secrets where the app is hosted: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Never expose the service role key to the browser.
 4. Open `/status`: the "Database for logs, limits and cache" row should be green.
@@ -57,16 +57,6 @@ npm run lint
 ```
 
 `npm run eval` prints the pass rate per check and per language, lists every failed item, and fails if the score drops below the floor in `evals/baseline.json`. Today it scores the keyword matching the app uses now (the baseline the AI parser must beat). After an improvement, raise the floor with `npm run eval -- --update-baseline`. Browser tests: [tests/README.md](tests/README.md). All of these run on every push and pull request (`.github/workflows/ci.yml`).
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/8bdca3a2-4a9a-4972-96e8-d74cac6d850a).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 

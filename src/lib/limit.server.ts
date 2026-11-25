@@ -1,7 +1,7 @@
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { rpc, sha256, storeConfigured } from "./store.server";
 
-// Set at build time in vite.config.ts: true for the Vercel build, false for Lovable/Cloudflare and local dev.
+// Set at build time in vite.config.ts: true for the Vercel build, false for other builds and local dev.
 declare const __VERCEL__: boolean;
 
 // The visitor's IP, read only from the header our host sets itself.

@@ -1,5 +1,5 @@
 // Shared storage for logs, rate limits and caches: a Postgres database reached through
-// Supabase's REST API (PostgREST). Works with Lovable Cloud or any Supabase project.
+// Supabase's REST API (PostgREST). Works with any Supabase project.
 //
 // Switched on by two server secrets:
 //   SUPABASE_URL               e.g. https://abcd.supabase.co
