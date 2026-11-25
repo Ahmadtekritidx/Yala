@@ -28,7 +28,7 @@ The judge only counts on its own **after calibration** shows it agrees with peop
 
 ## One-time setup (about 15 minutes)
 
-1. **Langfuse account.** Sign up at Langfuse Cloud, **EU region** (`cloud.langfuse.com`). Free tier is enough to start.
+1. **Langfuse account.** Sign up at Langfuse Cloud. Our project is in the **US region** (`us.cloud.langfuse.com`); the code defaults to EU (`cloud.langfuse.com`), so always set `LANGFUSE_BASE_URL`. Free tier is enough to start.
 2. **Project.** Create a project called `yalla`. In _Settings → API keys_, create a key pair.
 3. **Invite graders.** _Settings → Members_: invite Youssef. Annotation is available to members.
 4. **Keys on your computer** (never in code, never in git). In your shell, or a local `.env` you don't commit:
@@ -36,7 +36,7 @@ The judge only counts on its own **after calibration** shows it agrees with peop
    ```bash
    export LANGFUSE_PUBLIC_KEY=pk-lf-...
    export LANGFUSE_SECRET_KEY=sk-lf-...
-   export LANGFUSE_BASE_URL=https://cloud.langfuse.com
+   export LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
    export YALLA_JUDGE_API_KEY=sk-ant-... # the judge's key (ANTHROPIC_API_KEY also works locally)
    ```
 
@@ -47,11 +47,15 @@ The judge only counts on its own **after calibration** shows it agrees with peop
    npm run judge:setup
    ```
 
-   This creates the 13 score configs (the rubric questions with their 1/3/5 anchors, plus the code scores), the human queue, and the two datasets (`compose-plans` with the 22 tests, `parser` with the 32 parser items). Safe to re-run: it never deletes, and re-syncs the datasets after you edit the test files.
+   This creates the score configs (the rubric questions with their 1/3/5 anchors, plus the code scores), the human queue, and the two datasets (`compose-plans` with the 22 tests, `parser` with the 32 parser items). Safe to re-run: it never deletes, and re-syncs the datasets after you edit the test files.
+
+6. **Dashboards:** `npm run judge:dashboard` creates the Langfuse dashboard (`--replace` rebuilds it). For the admin page in the app, see "Dashboards" below.
 
 ---
 
 ## Every exam
+
+**Key check first.** If `YALLA_JUDGE_API_KEY` was copied from a screen that hides keys (`sk-ant-•••`), every judge call fails. `npm run judge` now stops before spending anything when the key holds such characters, and prints a loud warning when judge calls fail for any other reason.
 
 | Command                                                 | What it does                                                           | Cost                               |
 | ------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------- |
@@ -95,6 +99,14 @@ Do this once now, and again whenever the rubric or the judge prompt changes.
 
    The judge grades, but its scores stay on your computer. Every test goes to the human queue.
 
+   The console shows code checks only: the person running it may be a grader. If judge calls failed (wrong key, outage), re-ask only those questions on the **same plans and traces**, so people's grades still line up:
+
+   ```bash
+   npm run judge:rejudge -- evals/compose/runs/<time>-judge/
+   ```
+
+   It prints counts, never scores, and keeps a copy of the previous file.
+
 2. **People grade** the whole queue, alone (about 1 to 2 minutes per test).
 3. **Compare:**
 
@@ -117,6 +129,25 @@ Do this once now, and again whenever the rubric or the judge prompt changes.
 When every question is trusted, the judge grades exam runs alone. Keep people spot-checking about 10% of tests each week; any new disagreement becomes a rubric fix or a new test.
 
 ---
+
+## Dashboards
+
+**Langfuse dashboard "Yalla plan quality"** (`npm run judge:dashboard`): quality avg, instant fails, checks passed, score per question (judge vs people, by grader), judge cost. Langfuse score charts group by day, score name and grader, not by run; with one exam run a day, by day reads as by run. Run-level scores have their own names (`Run: judge cost (USD)`, `Run: tests below 3`) so a chart never adds them to the per-test scores.
+
+**Admin page in the app: `/admin`.** The same numbers, exactly per run: a table of runs, and judge vs people per question for any run, with gaps over 1 point in red. Every score `npm run judge` writes carries the run's name (`metadata.run`); people's grades join their run through the trace. Runs from before this have no name and show as "Unnamed run" with their date; the calibration run gets its name when its judge scores are pushed.
+
+The page asks for an admin key. On the server (Vercel project settings, Environment Variables), set:
+
+| Setting               | Value                                          |
+| --------------------- | ---------------------------------------------- |
+| `YALLA_ADMIN_KEY`     | A long random secret, shared with Youssef only |
+| `LANGFUSE_PUBLIC_KEY` | Same as on your computer                       |
+| `LANGFUSE_SECRET_KEY` | Same as on your computer                       |
+| `LANGFUSE_BASE_URL`   | `https://us.cloud.langfuse.com`                |
+
+Without them the page says which are missing. 60 requests an hour per visitor; the key is kept for the browser tab only. Exam data only, as below.
+
+Note: Langfuse Cloud removed its v3 APIs on November 19, 2026 (for example `GET /api/public/datasets/<name>/runs`). The page reads `GET /api/public/v3/scores`, which is current.
 
 ## The rubric
 
@@ -154,16 +185,21 @@ Today only **exam data** goes to Langfuse: test requests we wrote and frozen pla
 
 ## Files
 
-| File                          | What it is                                                               |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| `evals/compose/rubric.ts`     | The questions, anchors, which tests they apply to, the passing grade     |
-| `evals/compose/judge.ts`      | The AI judge: what it sees, one call per question, scores and cost       |
-| `evals/compose/experiment.ts` | `npm run judge`: plans → code checks → judge → Langfuse experiment       |
-| `evals/compose/agreement.ts`  | `npm run judge:agree`: judge vs people, per question                     |
-| `evals/compose/answers.ts`    | Plans from the live app or saved runs (shared with run-live and regrade) |
-| `evals/langfuse/client.ts`    | The one door to Langfuse: keys, score configs, queue, datasets           |
-| `evals/langfuse/setup.ts`     | `npm run judge:setup`                                                    |
-| `tests/compose-judge.test.ts` | The judge's plumbing, with a fake AI (part of `npm test`)                |
+| File                           | What it is                                                               |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `evals/compose/rubric.ts`      | The questions, anchors, which tests they apply to, the passing grade     |
+| `evals/compose/judge.ts`       | The AI judge: what it sees, one call per question, scores and cost       |
+| `evals/compose/experiment.ts`  | `npm run judge`: plans → code checks → judge → Langfuse experiment       |
+| `evals/compose/agreement.ts`   | `npm run judge:agree`: judge vs people, per question                     |
+| `evals/compose/answers.ts`     | Plans from the live app or saved runs (shared with run-live and regrade) |
+| `evals/langfuse/client.ts`     | The one door to Langfuse: keys, score configs, queue, datasets           |
+| `evals/langfuse/setup.ts`      | `npm run judge:setup`                                                    |
+| `evals/compose/judgments.ts`   | Reading and summarizing a run's judgments.json (rejudge, agree)          |
+| `evals/compose/rejudge.ts`     | `npm run judge:rejudge`: re-ask failed judge questions of a held run     |
+| `evals/langfuse/dashboard.ts`  | `npm run judge:dashboard`: the Langfuse dashboard                        |
+| `src/routes/admin.tsx`         | The admin page `/admin` (with `src/lib/admin.*.ts`, `quality-report.ts`) |
+| `tests/compose-judge.test.ts`  | The judge's plumbing, with a fake AI (part of `npm test`)                |
+| `tests/quality-report.test.ts` | The admin report's grouping by run (part of `npm test`)                  |
 
 Langfuse packages are dev dependencies: they are not in the app bundle.
 

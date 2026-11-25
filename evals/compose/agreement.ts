@@ -6,12 +6,10 @@
 // <judge folder> is a evals/compose/runs/<time>-judge/ folder printed by `npm run judge`.
 // Human grades are read from Langfuse (scores made in the annotation queue, source ANNOTATION).
 // The judge's grades come from the folder's judgments.json, the exact answers of that run.
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { connect } from "../langfuse/client.ts";
-import type { Judgment } from "./judge.ts";
-import { RUBRIC } from "./rubric.ts";
+import { writeFileSync } from "node:fs";
+import { connect, RUN_SCORES } from "../langfuse/client.ts";
+import { openRun, saveRun } from "./judgments.ts";
+import { PASS, RUBRIC } from "./rubric.ts";
 
 // The bar the judge must clear before its grades count on their own.
 export const CALIBRATION = { within1AtLeast: 0.8, minPairs: 5 } as const;
@@ -23,11 +21,7 @@ if (!folder) {
   console.error("Which run? npm run judge:agree -- evals/compose/runs/<time>-judge/");
   process.exit(2);
 }
-const dir = pathToFileURL(resolve(folder) + "/");
-const run = JSON.parse(readFileSync(new URL("judgments.json", dir), "utf8")) as {
-  summary: { judge: string; heldJudge: boolean };
-  results: { id: number; about: string; traceId?: string; judgments: Judgment[] }[];
-};
+const { run, dir, file, label, experimentId } = openRun(folder);
 const traced = run.results.filter((r) => r.traceId);
 if (!traced.length) {
   console.error("This run has no Langfuse traces (was it run with --offline?).");
@@ -36,6 +30,19 @@ if (!traced.length) {
 
 const { langfuse, close } = connect();
 const api = langfuse.api;
+
+if (push && (run.summary.judgeErrors ?? 0) > 0) {
+  console.error(
+    `${run.summary.judgeErrors} judge questions in this run have no answer (they failed). Re-ask them first:\n  npm run judge:rejudge -- ${folder}`,
+  );
+  process.exit(2);
+}
+if (push && run.summary["pushedAt"]) {
+  console.error(
+    `These judge scores were already sent on ${String(run.summary["pushedAt"])}. Run without --push to compare.`,
+  );
+  process.exit(2);
+}
 
 if (push) {
   const { ensureScoreConfigs } = await import("../langfuse/client.ts");
@@ -54,11 +61,40 @@ if (push) {
         value: j.value,
         comment: j.evidence ? `${j.reason}\nEvidence: ${j.evidence}` : j.reason,
         ...cfg(configs, j.name),
-        metadata: { grader: "ai-judge", judge: run.summary.judge, code: j.code },
+        metadata: { grader: "ai-judge", judge: run.summary.judge, code: j.code, run: label },
       });
       n++;
     }
+  // What a normal (not held) run sends next to the questions: the per-test average and run totals.
+  for (const r of traced)
+    if (r.quality !== null)
+      langfuse.score.create({
+        traceId: r.traceId!,
+        name: "Quality avg",
+        value: r.quality,
+        ...cfg(configs, "Quality avg"),
+        metadata: { grader: "ai-judge", run: label },
+      });
+  if (experimentId) {
+    const qs = traced.map((r) => r.quality).filter((q): q is number => q !== null);
+    langfuse.score.create({
+      datasetRunId: experimentId,
+      name: RUN_SCORES.testsBelow3,
+      value: qs.filter((q) => q < PASS.noTestBelow).length,
+      ...cfg(configs, RUN_SCORES.testsBelow3),
+      metadata: { run: label },
+    });
+    langfuse.score.create({
+      datasetRunId: experimentId,
+      name: RUN_SCORES.judgeCost,
+      value: run.summary.judgeCostUsd,
+      ...cfg(configs, RUN_SCORES.judgeCost),
+      metadata: { run: label },
+    });
+  }
   await langfuse.score.flush();
+  run.summary["pushedAt"] = new Date().toISOString();
+  saveRun(file, run);
   console.log(`Sent ${n} held judge scores to Langfuse.\n`);
 }
 

@@ -18,6 +18,13 @@ export const CODE_SCORES = {
   quality: "Quality avg",
 } as const;
 
+// One value per run (not per test). Names differ from the per-test scores on purpose: Langfuse
+// widgets can't tell run-level from per-test scores apart, so a shared name would double count.
+export const RUN_SCORES = {
+  judgeCost: "Run: judge cost (USD)",
+  testsBelow3: "Run: tests below 3",
+} as const;
+
 export function langfuseConfigured() {
   return !!(process.env["LANGFUSE_PUBLIC_KEY"] && process.env["LANGFUSE_SECRET_KEY"]);
 }
@@ -88,6 +95,19 @@ const codeConfigs = [
     minValue: 1,
     maxValue: 5,
     description: "Average of the 1 to 5 rubric questions for one test. Target 4, none below 3.",
+  },
+  {
+    name: RUN_SCORES.judgeCost,
+    dataType: "NUMERIC" as const,
+    minValue: 0,
+    description:
+      "What the AI judge cost for one run, in US dollars. The live app's own AI cost is in its spend log.",
+  },
+  {
+    name: RUN_SCORES.testsBelow3,
+    dataType: "NUMERIC" as const,
+    minValue: 0,
+    description: "Tests in one run whose quality average is below 3. Must be 0.",
   },
 ];
 

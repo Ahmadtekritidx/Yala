@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as PlansRouteImport } from './routes/plans'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as StatusRouteImport } from './routes/status'
@@ -18,6 +19,11 @@ import { Route as PCodeRouteImport } from './routes/p.$code'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlansRoute = PlansRouteImport.update({
@@ -43,6 +49,7 @@ const PCodeRoute = PCodeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/plans': typeof PlansRoute
   '/profile': typeof ProfileRoute
   '/status': typeof StatusRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/plans': typeof PlansRoute
   '/profile': typeof ProfileRoute
   '/status': typeof StatusRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/plans': typeof PlansRoute
   '/profile': typeof ProfileRoute
   '/status': typeof StatusRoute
@@ -65,14 +74,16 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/plans' | '/profile' | '/status' | '/p/$code'
+  fullPaths: '/' | '/admin' | '/plans' | '/profile' | '/status' | '/p/$code'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/plans' | '/profile' | '/status' | '/p/$code'
-  id: '__root__' | '/' | '/plans' | '/profile' | '/status' | '/p/$code'
+  to: '/' | '/admin' | '/plans' | '/profile' | '/status' | '/p/$code'
+  id:
+    '__root__' | '/' | '/admin' | '/plans' | '/profile' | '/status' | '/p/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   PlansRoute: typeof PlansRoute
   ProfileRoute: typeof ProfileRoute
   StatusRoute: typeof StatusRoute
@@ -86,6 +97,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plans': {
@@ -121,6 +139,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   PlansRoute: PlansRoute,
   ProfileRoute: ProfileRoute,
   StatusRoute: StatusRoute,

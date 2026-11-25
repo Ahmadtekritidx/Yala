@@ -10,11 +10,13 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "test": "for t in tests/hours.test.ts tests/alternatives.test.ts tests/plans-state.test.ts tests/eval-score.test.ts tests/store.test.ts tests/compose-grade.test.ts tests/compose-judge.test.ts tests/compose-routes.test.ts tests/intent-areas.test.ts; do node --experimental-strip-types --no-warnings $t || exit 1; done",
+    "test": "for t in tests/hours.test.ts tests/alternatives.test.ts tests/plans-state.test.ts tests/eval-score.test.ts tests/store.test.ts tests/compose-grade.test.ts tests/compose-judge.test.ts tests/compose-routes.test.ts tests/intent-areas.test.ts tests/quality-report.test.ts; do node --experimental-strip-types --no-warnings $t || exit 1; done",
     "eval": "node --experimental-strip-types --no-warnings evals/run.ts",
     "judge": "node --experimental-strip-types --no-warnings evals/compose/experiment.ts",
     "judge:setup": "node --experimental-strip-types --no-warnings evals/langfuse/setup.ts",
     "judge:agree": "node --experimental-strip-types --no-warnings evals/compose/agreement.ts",
+    "judge:rejudge": "node --experimental-strip-types --no-warnings evals/compose/rejudge.ts",
+    "judge:dashboard": "node --experimental-strip-types --no-warnings evals/langfuse/dashboard.ts",
     "typecheck": "tsc --noEmit -p ."
   },
   "overrides": {

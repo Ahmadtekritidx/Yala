@@ -255,10 +255,20 @@ export const judgeLabel = () =>
 export const judgeKey = () =>
   process.env["YALLA_JUDGE_API_KEY"] ?? process.env["ANTHROPIC_API_KEY"];
 
+// Why the judge's key can't be used, or null. A key copied from a screen that masks it
+// ("sk-ant-•••") can't go in an HTTP header: every call would fail, so catch it before the run.
+export function judgeKeyProblem(key = judgeKey()): string | null {
+  if (!key) return "The judge needs YALLA_JUDGE_API_KEY (see docs/ai/judge.md).";
+  if (/[^\x21-\x7e]/.test(key))
+    return "YALLA_JUDGE_API_KEY has hidden or masked characters (dots or spaces): it looks copied from a screen that hides the key. Paste the full key again.";
+  return null;
+}
+
 // The real judge: Claude through the Anthropic SDK, structured output.
 export function anthropicAsk(): Ask {
   const apiKey = judgeKey();
-  if (!apiKey) throw new Error("The judge needs YALLA_JUDGE_API_KEY (see docs/ai/judge.md).");
+  const problem = judgeKeyProblem(apiKey);
+  if (problem || !apiKey) throw new Error(problem ?? "missing judge key");
   // Always the public API: some environments point ANTHROPIC_BASE_URL elsewhere for their own use.
   const client = new Anthropic({
     apiKey,

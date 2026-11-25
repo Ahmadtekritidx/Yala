@@ -22,7 +22,7 @@ import { grade, type Card, type Grade, type Plan } from "./grade.ts";
 import { APP, callPlanner, loadCards, loadLatestAnswers, placeFinder, runsDir } from "./answers.ts";
 import {
   anthropicAsk,
-  judgeKey,
+  judgeKeyProblem,
   judgeLabel,
   judgeTest,
   plansView,
@@ -82,10 +82,9 @@ if (source === "live" && !flag("confirm")) {
   process.exit(0);
 }
 
-if (useJudge && !judgeKey()) {
-  console.error(
-    "The AI judge needs YALLA_JUDGE_API_KEY (or ANTHROPIC_API_KEY) in your environment. Or add --no-judge for code checks only.",
-  );
+const keyProblem = useJudge ? judgeKeyProblem() : null;
+if (keyProblem) {
+  console.error(`${keyProblem} Or add --no-judge for code checks only.`);
   process.exit(2);
 }
 if (!offline && !(process.env["LANGFUSE_PUBLIC_KEY"] && process.env["LANGFUSE_SECRET_KEY"])) {
@@ -97,6 +96,9 @@ if (!offline && !(process.env["LANGFUSE_PUBLIC_KEY"] && process.env["LANGFUSE_SE
 const ask: Ask | undefined = useJudge ? anthropicAsk() : undefined;
 const runName = arg("name") ?? (source === "live" ? `live app ${APP}` : "saved answers");
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+// The run's name in Langfuse. Every score this program writes carries it as metadata.run,
+// so the admin page can group scores by run (Langfuse's own score views can't).
+const runLabel = `${runName} · ${stamp}`;
 const outDir = new URL(`${stamp}-judge/`, runsDir);
 mkdirSync(outDir, { recursive: true });
 const liveDir = new URL(`${stamp}-live/`, runsDir);
@@ -107,6 +109,8 @@ type Result = {
   id: number;
   about: string;
   traceId?: string;
+  // The saved-answers folder the plans came from (evals/compose/runs/<time>-live), for rejudge.ts.
+  answerDir?: string;
   error?: string;
   ms?: number;
   code?: {
@@ -120,9 +124,16 @@ type Result = {
 };
 const results = new Map<number, Result>();
 const answers = new Map<number, Answered>();
+const answerDirs = new Map<number, string>();
+const judgeCost = () =>
+  Math.round(
+    [...results.values()].flatMap((r) => r.judgments).reduce((a, j) => a + (j.costUsd ?? 0), 0) *
+      100,
+  ) / 100;
 
 // Step 1: get the plans for one test (saved or live). Throws on a planner error.
 async function plansFor(card: Card): Promise<Answered> {
+  answerDirs.set(card.id, saved ? saved.get(card.id)!.dir : `${stamp}-live`);
   if (saved) return saved.get(card.id)!.answer;
   const { answer, ms } = await callPlanner(card, new URL(`${card.id}.raw.json`, liveDir));
   writeFileSync(new URL(`${card.id}.json`, liveDir), JSON.stringify({ card, ms, answer }, null, 2));
@@ -159,6 +170,8 @@ async function gradeTest(card: Card, answer: Answered): Promise<Result> {
     judgments,
     quality: qualityAverage(judgments),
   };
+  const dir = answerDirs.get(card.id);
+  if (dir) r.answerDir = dir;
   results.set(card.id, r);
   return r;
 }
@@ -167,12 +180,20 @@ function printTest(r: Result) {
   if (r.error) return console.log(`Test ${r.id} (${r.about}): planner error: ${r.error}`);
   const c = r.code!;
   const fails = r.judgments.filter((j) => j.kind === "flag" && j.value === 0);
+  const errors = r.judgments.filter((j) => j.error).length;
+  // Blind calibration: the person running this may be a grader, so judge scores stay off the screen too.
+  const judgeText = !ask
+    ? ""
+    : holdJudge
+      ? `, judge held back${errors ? ` (${errors} judge errors)` : ""}`
+      : `, quality ${r.quality ?? "n/a"}, judge instant fails ${fails.length}`;
   console.log(
     `Test ${r.id} (${r.about}): checks ${c.checksPassed}/${c.checks}, code instant fails ${c.instantFails.length}` +
-      (ask ? `, quality ${r.quality ?? "n/a"}, judge instant fails ${fails.length}` : ""),
+      judgeText,
   );
   for (const f of c.failed) console.log(`   ✗ ${f}`);
   for (const f of c.instantFails) console.log(`   🚨 ${f.code} ${f.name}: ${f.detail}`);
+  if (holdJudge) return;
   for (const j of r.judgments) {
     if (j.error) console.log(`   ? ${j.code} judge error: ${j.error}`);
     else if (j.kind === "scale" && j.value! < PASS.noTestBelow)
@@ -197,6 +218,7 @@ function evaluationsFor(r: Result, configs: Map<string, string>): Evaluation[] {
       value: r.code.checks ? r.code.checksPassed / r.code.checks : 1,
       comment: r.code.failed.join("\n") || "all passed",
       ...cfg(configs, "A checks passed"),
+      metadata: { run: runLabel },
     },
     {
       name: "Instant fails (code)",
@@ -204,6 +226,7 @@ function evaluationsFor(r: Result, configs: Map<string, string>): Evaluation[] {
       comment:
         r.code.instantFails.map((f) => `${f.code} ${f.name}: ${f.detail}`).join("\n") || "none",
       ...cfg(configs, "Instant fails (code)"),
+      metadata: { run: runLabel },
     },
   ];
   if (holdJudge) return out;
@@ -214,7 +237,7 @@ function evaluationsFor(r: Result, configs: Map<string, string>): Evaluation[] {
       value: j.value,
       comment: j.evidence ? `${j.reason}\nEvidence: ${j.evidence}` : j.reason,
       ...cfg(configs, j.name),
-      metadata: { grader: "ai-judge", judge: judgeLabel(), code: j.code },
+      metadata: { grader: "ai-judge", judge: judgeLabel(), code: j.code, run: runLabel },
     });
   }
   if (r.quality !== null)
@@ -222,7 +245,7 @@ function evaluationsFor(r: Result, configs: Map<string, string>): Evaluation[] {
       name: "Quality avg",
       value: r.quality,
       ...cfg(configs, "Quality avg"),
-      metadata: { grader: "ai-judge" },
+      metadata: { grader: "ai-judge", run: runLabel },
     });
   return out;
 }
@@ -236,6 +259,7 @@ console.log(
 );
 
 let experimentUrl: string | undefined;
+let experimentId: string | undefined;
 let queued = 0;
 if (offline) {
   for (const card of chosen) {
@@ -248,7 +272,7 @@ if (offline) {
     }
   }
 } else {
-  const { connect, ensureQueue, ensureScoreConfigs, DATASET_COMPOSE } =
+  const { connect, ensureQueue, ensureScoreConfigs, DATASET_COMPOSE, RUN_SCORES } =
     await import("../langfuse/client.ts");
   const { langfuse, close } = connect();
   const configs = await ensureScoreConfigs(langfuse.api);
@@ -266,7 +290,7 @@ if (offline) {
     // Only the chosen tests (running on the dataset itself would take every item).
     data: items,
     name: "Compose plans",
-    runName: `${runName} · ${stamp}`,
+    runName: runLabel,
     description: `Plans from ${source === "saved" ? "saved answers" : APP}. ${ask ? `Judge: ${judgeLabel()}.` : "No judge."}`,
     metadata: { source, app: APP, judge: ask ? judgeLabel() : "none", heldJudge: holdJudge },
     maxConcurrency: 2,
@@ -285,34 +309,29 @@ if (offline) {
         return evaluationsFor(r, configs);
       },
     ],
-    // One line per run in the dashboard: the numbers the passing grade is about.
+    // Run-level scores. Their names differ from the per-test ones, so a sum or average in a Langfuse
+    // widget never mixes the two (score views can't tell them apart). Langfuse's experiment page
+    // already averages the per-test scores of each run.
     runEvaluators: [
       async () => {
-        const rs = [...results.values()].filter((r) => r.code);
-        const qs = rs.map((r) => r.quality).filter((q): q is number => q !== null);
-        const checks = rs.reduce((a, r) => a + r.code!.checks, 0);
         const out: Evaluation[] = [
-          {
-            name: "A checks passed",
-            value: checks ? rs.reduce((a, r) => a + r.code!.checksPassed, 0) / checks : 1,
-          },
-          {
-            name: "Instant fails (code)",
-            value: rs.reduce((a, r) => a + r.code!.instantFails.length, 0),
-          },
+          { name: RUN_SCORES.judgeCost, value: judgeCost(), metadata: { run: runLabel } },
         ];
-        if (qs.length && !holdJudge) {
+        const qs = [...results.values()]
+          .map((r) => r.quality)
+          .filter((q): q is number => q !== null);
+        if (qs.length && !holdJudge)
           out.push({
-            name: "Quality avg",
-            value: Math.round((qs.reduce((a, b) => a + b, 0) / qs.length) * 100) / 100,
+            name: RUN_SCORES.testsBelow3,
+            value: qs.filter((q) => q < PASS.noTestBelow).length,
+            metadata: { run: runLabel },
           });
-          out.push({ name: "Tests below 3", value: qs.filter((q) => q < PASS.noTestBelow).length });
-        }
         return out;
       },
     ],
   });
   experimentUrl = result.experimentUrl;
+  experimentId = result.experimentId;
   for (const it of result.itemResults) {
     const r = results.get((it.item.input as Card).id);
     if (r && it.traceId) r.traceId = it.traceId;
@@ -339,12 +358,14 @@ const judgeFails = done.flatMap((r) =>
   r.judgments.filter((j) => j.kind === "flag" && j.value === 0),
 );
 const codeFails = done.reduce((a, r) => a + r.code!.instantFails.length, 0);
-const cost = done.flatMap((r) => r.judgments).reduce((a, j) => a + (j.costUsd ?? 0), 0);
+const judgeCalls = done.flatMap((r) => r.judgments);
+const judgeErrors = judgeCalls.filter((j) => j.error);
 const avg = qs.length ? Math.round((qs.reduce((a, b) => a + b, 0) / qs.length) * 100) / 100 : null;
 const below = qs.filter((q) => q < PASS.noTestBelow).length;
 const summary = {
   date: new Date().toISOString(),
   run: runName,
+  runLabel,
   source,
   judge: ask ? judgeLabel() : "none",
   heldJudge: holdJudge,
@@ -360,7 +381,9 @@ const summary = {
         passing: avg !== null && avg >= PASS.averageAtLeast && below === 0,
       }
     : null,
-  judgeCostUsd: Math.round(cost * 100) / 100,
+  judgeCostUsd: judgeCost(),
+  judgeErrors: judgeErrors.length,
+  experimentId: experimentId ?? null,
   experimentUrl: experimentUrl ?? null,
 };
 writeFileSync(
@@ -369,11 +392,17 @@ writeFileSync(
 );
 
 console.log(
-  `\n${summary.tests} graded: ${summary.checksPassed}/${summary.checks} checks, instant fails ${codeFails} (code) + ${judgeFails.length} (judge)`,
+  `\n${summary.tests} graded: ${summary.checksPassed}/${summary.checks} checks, instant fails ${codeFails} (code)${ask && !holdJudge ? ` + ${judgeFails.length} (judge)` : ""}`,
 );
-if (ask)
+if (ask && !holdJudge)
   console.log(
     `Quality: average ${avg ?? "n/a"} (target ${PASS.averageAtLeast}), tests below ${PASS.noTestBelow}: ${below}. Judge cost about $${summary.judgeCostUsd}.`,
+  );
+if (ask && holdJudge) console.log(`Judge cost about $${summary.judgeCostUsd}.`);
+if (judgeErrors.length)
+  console.log(
+    `\n${judgeErrors.length} of ${judgeCalls.length} judge calls FAILED. First error: ${judgeErrors[0]!.error}\n` +
+      `Fix the cause, then re-ask only those questions: npm run judge:rejudge -- ${outDir.pathname}`,
   );
 if (holdJudge)
   console.log(
