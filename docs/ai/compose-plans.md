@@ -408,6 +408,10 @@ Today: 20 plans per hour per IP, kept in each server's memory (resets often); no
 | `evals/compose/run-live.ts`   | Runs tests through the live app (costs money, needs `--confirm`); saves each raw answer before reading it                    |
 | `evals/compose/regrade.ts`    | Re-grades saved answers with the current rules, for free                                                                     |
 | `tests/compose-grade.test.ts` | Proves every check catches its planted mistake                                                                               |
+| `evals/compose/rubric.ts`     | The quality questions (B1 to B7, C3 to C5) with 1/3/5 anchors: one source for the AI judge and human graders                 |
+| `evals/compose/judge.ts`      | The AI judge: Opus, one question per call, reason then score                                                                 |
+| `evals/compose/experiment.ts` | `npm run judge`: code checks + judge, sent to Langfuse as an experiment ([judge.md](judge.md))                               |
+| `evals/compose/agreement.ts`  | `npm run judge:agree`: does the judge grade like our people?                                                                 |
 
 Runs are saved in `evals/compose/runs/` and not committed (they hold Google place data).
 
@@ -472,4 +476,4 @@ Changes made during the live runs: Write moved from medium to low effort with a 
 ## Next
 
 - Finish task 6 (Youssef's review), then write the remaining 18 tests.
-- Step 9: grade quality with a judge, then build D1, D2 and D5 in code and compare with the baseline.
+- Step 9: grade quality with a judge (built 2026-11-25, see [judge.md](judge.md): set up Langfuse, run a blind calibration with Ahmad and Youssef, then trust the judge), then build D1, D2 and D5 in code and compare with the baseline.

@@ -5,30 +5,12 @@
 //   node --experimental-strip-types evals/compose/regrade.ts --write-baseline    # also update baseline.json
 //
 // When a test was run more than once, its latest answer counts.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { PLACES, type Place } from "../../src/lib/places.ts";
-import { grade, summarize, withDefaults, type Card, type Grade, type Plan } from "./grade.ts";
+import { writeFileSync } from "node:fs";
+import { grade, summarize, type Grade } from "./grade.ts";
+import { here, loadCards, loadLatestAnswers, placeFinder } from "./answers.ts";
 
-const here = new URL("./", import.meta.url);
-const runs = new URL("runs/", here);
-const file = JSON.parse(readFileSync(new URL("tests.json", here), "utf8")) as {
-  defaults: Partial<Card>;
-  tests: Partial<Card>[];
-};
-const cards = new Map(file.tests.map((t) => [t.id!, withDefaults(file.defaults, t)]));
-
-type Saved = { ms: number; answer: { plans: Plan[]; places: Place[] } | { error: string } };
-const latest = new Map<number, Saved>();
-const dirs = existsSync(runs)
-  ? readdirSync(runs)
-      .filter((d) => d.endsWith("-live"))
-      .sort()
-  : [];
-for (const d of dirs)
-  for (const f of readdirSync(new URL(`${d}/`, runs)).filter((f) => /^\d+\.json$/.test(f))) {
-    const saved = JSON.parse(readFileSync(new URL(`${d}/${f}`, runs), "utf8")) as Saved;
-    if (!("error" in saved.answer)) latest.set(Number(f.split(".")[0]), saved);
-  }
+const cards = new Map(loadCards().cards.map((c) => [c.id, c]));
+const latest = loadLatestAnswers();
 if (!latest.size) {
   console.error("No saved answers in evals/compose/runs/. Run run-live.ts first.");
   process.exit(2);
@@ -38,9 +20,8 @@ const grades: Grade[] = [];
 const ms: number[] = [];
 for (const [id, saved] of [...latest].sort((a, b) => a[0] - b[0])) {
   const card = cards.get(id);
-  if (!card || "error" in saved.answer) continue;
-  const byId = new Map<string, Place>([...PLACES, ...saved.answer.places].map((p) => [p.id, p]));
-  const g = grade(card, saved.answer.plans, (pid) => byId.get(pid));
+  if (!card) continue;
+  const g = grade(card, saved.answer.plans, placeFinder(card, saved.answer));
   grades.push(g);
   ms.push(saved.ms);
   const failed = g.checks.filter((c) => !c.pass);

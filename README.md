@@ -51,6 +51,7 @@ The exam for this feature: `evals/compose/` (see Step 9 in the doc).
 ```sh
 npm test          # unit tests (opening hours, Swap/Add rules, page states, exam marker, database client)
 npm run eval      # the parser exam: scores request understanding against evals/parser.golden.json
+npm run judge -- --source saved   # plan quality: code checks + AI judge, shown in Langfuse (docs/ai/judge.md)
 npm run typecheck
 npm run lint
 ```
