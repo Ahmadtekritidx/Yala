@@ -22,6 +22,7 @@ import { grade, type Card, type Grade, type Plan } from "./grade.ts";
 import { APP, callPlanner, loadCards, loadLatestAnswers, placeFinder, runsDir } from "./answers.ts";
 import {
   anthropicAsk,
+  judgeKey,
   judgeLabel,
   judgeTest,
   plansView,
@@ -81,9 +82,9 @@ if (source === "live" && !flag("confirm")) {
   process.exit(0);
 }
 
-if (useJudge && !process.env["ANTHROPIC_API_KEY"]) {
+if (useJudge && !judgeKey()) {
   console.error(
-    "The AI judge needs ANTHROPIC_API_KEY in your environment. Or add --no-judge for code checks only.",
+    "The AI judge needs YALLA_JUDGE_API_KEY (or ANTHROPIC_API_KEY) in your environment. Or add --no-judge for code checks only.",
   );
   process.exit(2);
 }

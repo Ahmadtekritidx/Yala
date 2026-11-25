@@ -37,7 +37,7 @@ The judge only counts on its own **after calibration** shows it agrees with peop
    export LANGFUSE_PUBLIC_KEY=pk-lf-...
    export LANGFUSE_SECRET_KEY=sk-lf-...
    export LANGFUSE_BASE_URL=https://cloud.langfuse.com
-   export ANTHROPIC_API_KEY=sk-ant-...   # the judge's key; can be the same as the app's
+   export YALLA_JUDGE_API_KEY=sk-ant-... # the judge's key (ANTHROPIC_API_KEY also works locally)
    ```
 
 5. **Create everything in Langfuse:**

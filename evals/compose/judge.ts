@@ -251,11 +251,21 @@ export function qualityAverage(js: Judgment[]) {
 export const judgeLabel = () =>
   `${JUDGE_MODEL} (${JUDGE_EFFORT}), judge prompt v${JUDGE_PROMPT_VERSION}, rubric v${RUBRIC_VERSION}`;
 
+// The judge's key. Its own name first: cloud coding sessions reserve ANTHROPIC_API_KEY for themselves.
+export const judgeKey = () =>
+  process.env["YALLA_JUDGE_API_KEY"] ?? process.env["ANTHROPIC_API_KEY"];
+
 // The real judge: Claude through the Anthropic SDK, structured output.
 export function anthropicAsk(): Ask {
-  if (!process.env["ANTHROPIC_API_KEY"])
-    throw new Error("The judge needs ANTHROPIC_API_KEY (see docs/ai/judge.md).");
-  const client = new Anthropic({ timeout: 90_000, maxRetries: 2 });
+  const apiKey = judgeKey();
+  if (!apiKey) throw new Error("The judge needs YALLA_JUDGE_API_KEY (see docs/ai/judge.md).");
+  // Always the public API: some environments point ANTHROPIC_BASE_URL elsewhere for their own use.
+  const client = new Anthropic({
+    apiKey,
+    baseURL: process.env["YALLA_JUDGE_BASE_URL"] ?? "https://api.anthropic.com",
+    timeout: 90_000,
+    maxRetries: 2,
+  });
   return async (system, user, schema) => {
     const res = await client.beta.messages.parse({
       model: JUDGE_MODEL,
