@@ -136,14 +136,13 @@ When every question is trusted, the judge grades exam runs alone. Keep people sp
 
 **Admin page in the app: `/admin`.** The same numbers, exactly per run: a table of runs, and judge vs people per question for any run, with gaps over 1 point in red. Every score `npm run judge` writes carries the run's name (`metadata.run`); people's grades join their run through the trace. Runs from before this have no name and show as "Unnamed run" with their date; the calibration run gets its name when its judge scores are pushed.
 
-The page asks for an admin key. On the server (Vercel project settings, Environment Variables), set:
+The page asks for the admin password. Its salted fingerprint is in `src/lib/admin.server.ts` (`OWNER_KEY`); the password itself is only with Ahmad. Setting `YALLA_ADMIN_KEY` on the server replaces it. On the server (Vercel project settings, Environment Variables), set:
 
-| Setting               | Value                                          |
-| --------------------- | ---------------------------------------------- |
-| `YALLA_ADMIN_KEY`     | A long random secret, shared with Youssef only |
-| `LANGFUSE_PUBLIC_KEY` | Same as on your computer                       |
-| `LANGFUSE_SECRET_KEY` | Same as on your computer                       |
-| `LANGFUSE_BASE_URL`   | `https://us.cloud.langfuse.com`                |
+| Setting               | Value                                                          |
+| --------------------- | -------------------------------------------------------------- |
+| `LANGFUSE_PUBLIC_KEY` | Same as on your computer                                       |
+| `LANGFUSE_SECRET_KEY` | Same as on your computer                                       |
+| `LANGFUSE_BASE_URL`   | Optional: the page defaults to `https://us.cloud.langfuse.com` |
 
 Without them the page says which are missing. 60 requests an hour per visitor; the key is remembered on that device after the first time, until "Sign out". Exam data only, as below.
 

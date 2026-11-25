@@ -1,23 +1,34 @@
 // Admin: who may see the quality report, and where its scores come from (Langfuse).
-// Server only. Needs YALLA_ADMIN_KEY plus the Langfuse keys (docs/ai/judge.md, "Admin page").
-import { createHash, timingSafeEqual } from "node:crypto";
+// Server only. Needs the Langfuse keys (docs/ai/judge.md, "Admin page").
+import { createHash, scryptSync, timingSafeEqual } from "node:crypto";
 import { buildReport, type QualityReport, type RawScore } from "./quality-report";
 
 const env = (k: string) => process.env[k]?.trim() || undefined;
 const langfuseBase = () =>
-  (env("LANGFUSE_BASE_URL") ?? "https://cloud.langfuse.com").replace(/\/$/, "");
+  (env("LANGFUSE_BASE_URL") ?? "https://us.cloud.langfuse.com").replace(/\/$/, "");
 
 // Server settings still missing (names only, never values).
 export function adminMissing() {
-  return ["YALLA_ADMIN_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"].filter((k) => !env(k));
+  return ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"].filter((k) => !env(k));
 }
+
+// The owner's admin password, stored only as a salted scrypt fingerprint (the repo is public).
+// To change it, generate a new pair with scryptSync(password, salt, 32), or set YALLA_ADMIN_KEY on
+// the server, which then replaces this one.
+const OWNER_KEY = {
+  salt: "9c51d8e52e8a1a0bb005e0aff47f39ce",
+  hash: "f0f405e095815827ca657b416909f8b444dacebe88fd090937577afd23ee27f4",
+};
 
 // Same time whatever the guess, so the key can't be found one character at a time.
 export function adminKeyMatches(given: string) {
   const want = env("YALLA_ADMIN_KEY");
-  if (!want) return false;
-  const h = (s: string) => createHash("sha256").update(s).digest();
-  return timingSafeEqual(h(given), h(want));
+  if (want) {
+    const h = (s: string) => createHash("sha256").update(s).digest();
+    return timingSafeEqual(h(given), h(want));
+  }
+  const got = scryptSync(given, OWNER_KEY.salt, 32);
+  return timingSafeEqual(got, Buffer.from(OWNER_KEY.hash, "hex"));
 }
 
 type V3Score = {
