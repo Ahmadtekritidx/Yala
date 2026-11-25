@@ -145,7 +145,7 @@ The page asks for an admin key. On the server (Vercel project settings, Environm
 | `LANGFUSE_SECRET_KEY` | Same as on your computer                       |
 | `LANGFUSE_BASE_URL`   | `https://us.cloud.langfuse.com`                |
 
-Without them the page says which are missing. 60 requests an hour per visitor; the key is kept for the browser tab only. Exam data only, as below.
+Without them the page says which are missing. 60 requests an hour per visitor; the key is remembered on that device after the first time, until "Sign out". Exam data only, as below.
 
 Note: Langfuse Cloud removed its v3 APIs on November 19, 2026 (for example `GET /api/public/datasets/<name>/runs`). The page reads `GET /api/public/v3/scores`, which is current.
 

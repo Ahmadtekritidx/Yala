@@ -10,19 +10,20 @@ export const Route = createFileRoute("/admin")({
 });
 
 type Answer = Awaited<ReturnType<typeof adminQuality>>;
-// The key lives for this browser tab only. Storage can be blocked: the page still works, it just asks again.
+// The key is remembered on this device, so the page opens directly after the first time.
+// "Sign out" forgets it. Storage can be blocked: the page still works, it just asks again.
 const KEY = "yalla-admin-key";
 const readKey = () => {
   try {
-    return sessionStorage.getItem(KEY) ?? "";
+    return localStorage.getItem(KEY) ?? "";
   } catch {
     return "";
   }
 };
 const writeKey = (k: string) => {
   try {
-    if (k) sessionStorage.setItem(KEY, k);
-    else sessionStorage.removeItem(KEY);
+    if (k) localStorage.setItem(KEY, k);
+    else localStorage.removeItem(KEY);
   } catch {
     /* storage blocked */
   }
