@@ -21,8 +21,8 @@ export const CODE_SCORES = {
 // One value per run (not per test). Names differ from the per-test scores on purpose: Langfuse
 // widgets can't tell run-level from per-test scores apart, so a shared name would double count.
 export const RUN_SCORES = {
-  judgeCost: "Run: judge cost (USD)",
-  testsBelow3: "Run: tests below 3",
+  judgeCost: "Run - judge cost (USD)",
+  testsBelow3: "Run - tests below 3",
 } as const;
 
 export function langfuseConfigured() {

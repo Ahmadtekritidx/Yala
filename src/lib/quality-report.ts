@@ -41,11 +41,12 @@ export type QuestionRow = {
 
 export type QualityReport = { runs: RunRow[]; questions: Record<string, QuestionRow[]> };
 
+// Langfuse score names allow letters, numbers, spaces and ._()- only.
 const NAMES = {
   checks: "A checks passed",
   codeFails: "Instant fails (code)",
   quality: "Quality avg",
-  judgeCost: "Run: judge cost (USD)",
+  judgeCost: "Run - judge cost (USD)",
 } as const;
 
 // "B1 Fits the request" -> scale, "C4 No invented fact" -> flag (instant fail when false).
@@ -78,9 +79,9 @@ export function buildReport(scores: RawScore[]): QualityReport {
 
   const byRun = new Map<string, RawScore[]>();
   for (const s of scores) {
-    // Without a trace, only the run-level "Run: ..." scores count. Older run-level scores
-    // shared the per-test names and would count twice.
-    if (!s.traceId && !s.name.startsWith("Run: ")) continue;
+    // Without a trace, only the run-level "Run - ..." scores count ("Run: ..." before Langfuse
+    // refused colons in names). Older run-level scores shared the per-test names and would count twice.
+    if (!s.traceId && !/^Run[:\s-]/.test(s.name)) continue;
     const key =
       s.run ??
       (s.traceId ? traceRun.get(s.traceId) : undefined) ??
@@ -117,7 +118,9 @@ export function buildReport(scores: RawScore[]): QualityReport {
       peopleQuality: round(avg(values((s) => people(s) && rubricKind(s.name) === "scale"))),
       peopleFails: fails(people),
       peopleGraded: graded.size,
-      judgeCostUsd: round(sum(values((s) => s.name === NAMES.judgeCost))),
+      judgeCostUsd: round(
+        sum(values((s) => s.name === NAMES.judgeCost || s.name === "Run: judge cost (USD)")),
+      ),
     });
 
     const names = [...new Set(list.map((s) => s.name).filter((n) => rubricKind(n)))].sort();

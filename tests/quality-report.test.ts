@@ -28,7 +28,7 @@ const scores: RawScore[] = [
   s({ name: "C4 No invented fact", value: false, traceId: "t2", run: RUN }),
   s({ name: "Quality avg", value: 5, traceId: "t1", run: RUN }),
   s({ name: "Quality avg", value: 3, traceId: "t2", run: RUN }),
-  s({ name: "Run: judge cost (USD)", value: 2.5, run: RUN }),
+  s({ name: "Run - judge cost (USD)", value: 2.5, run: RUN }),
   // people: no run on their scores, joined through the trace
   s({ name: "B1 Fits the request", value: 4, traceId: "t1", source: "ANNOTATION" }),
   s({ name: "B1 Fits the request", value: 2, traceId: "t2", source: "ANNOTATION" }),

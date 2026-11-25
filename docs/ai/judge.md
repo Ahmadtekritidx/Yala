@@ -132,7 +132,7 @@ When every question is trusted, the judge grades exam runs alone. Keep people sp
 
 ## Dashboards
 
-**Langfuse dashboard "Yalla plan quality"** (`npm run judge:dashboard`): quality avg, instant fails, checks passed, score per question (judge vs people, by grader), judge cost. Langfuse score charts group by day, score name and grader, not by run; with one exam run a day, by day reads as by run. Run-level scores have their own names (`Run: judge cost (USD)`, `Run: tests below 3`) so a chart never adds them to the per-test scores.
+**Langfuse dashboard "Yalla plan quality"** (`npm run judge:dashboard`): quality avg, instant fails, checks passed, score per question (judge vs people, by grader), judge cost. Langfuse score charts group by day, score name and grader, not by run; with one exam run a day, by day reads as by run. Run-level scores have their own names (`Run - judge cost (USD)`, `Run - tests below 3`; Langfuse refuses colons in score names) so a chart never adds them to the per-test scores.
 
 **Admin page in the app: `/admin`.** The same numbers, exactly per run: a table of runs, and judge vs people per question for any run, with gaps over 1 point in red. Every score `npm run judge` writes carries the run's name (`metadata.run`); people's grades join their run through the trace. Runs from before this have no name and show as "Unnamed run" with their date; the calibration run gets its name when its judge scores are pushed.
 
